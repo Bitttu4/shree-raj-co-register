@@ -19,6 +19,8 @@ import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as DocumentPicker from 'expo-document-picker';
+import { useAuth } from '@/src/context/AuthContext';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
@@ -46,6 +48,7 @@ interface Document {
 
 export default function ClientDetailScreen() {
   const { id } = useLocalSearchParams();
+  const { token } = useAuth();
   const [client, setClient] = useState<Client | null>(null);
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
@@ -57,12 +60,17 @@ export default function ClientDetailScreen() {
   const [editClientModalVisible, setEditClientModalVisible] = useState(false);
   const [messageModalVisible, setMessageModalVisible] = useState(false);
   const [cheatsheetModalVisible, setCheatsheetModalVisible] = useState(false);
+  const [bulkDocsModalVisible, setBulkDocsModalVisible] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   
   // AI states
   const [generatedMessage, setGeneratedMessage] = useState('');
   const [cheatsheetContent, setCheatsheetContent] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
+  
+  // Bulk import states
+  const [docsCsvText, setDocsCsvText] = useState('');
+  const [bulkLoading, setBulkLoading] = useState(false);
   
   // Currently editing document
   const [editingDoc, setEditingDoc] = useState<Document | null>(null);
@@ -378,6 +386,70 @@ export default function ClientDetailScreen() {
     fetchClientData();
   };
 
+  const pickDocsCsvFile = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['text/csv', 'text/comma-separated-values', '*/*'],
+        copyToCacheDirectory: true,
+      });
+
+      if (result.canceled || !result.assets || !result.assets[0]) return;
+
+      const file = result.assets[0];
+      const response = await fetch(file.uri);
+      const text = await response.text();
+      setDocsCsvText(text);
+    } catch (error) {
+      console.error('Error picking file:', error);
+      Alert.alert('Error', 'Could not read CSV file');
+    }
+  };
+
+  const handleBulkDocsImport = async () => {
+    if (!docsCsvText.trim()) {
+      Alert.alert('Error', 'Please provide CSV data');
+      return;
+    }
+
+    setBulkLoading(true);
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/bulk/documents`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ client_id: id, csv_data: docsCsvText }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        Alert.alert(
+          'Import Complete',
+          `Created ${data.created_count} documents.${data.errors.length > 0 ? `\n\n${data.errors.length} errors:\n${data.errors.slice(0, 3).join('\n')}` : ''}`,
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                setBulkDocsModalVisible(false);
+                setDocsCsvText('');
+                fetchClientData();
+              },
+            },
+          ]
+        );
+      } else {
+        Alert.alert('Error', data.detail || 'Failed to import');
+      }
+    } catch (error) {
+      console.error('Bulk import error:', error);
+      Alert.alert('Error', 'Failed to import documents');
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -505,9 +577,18 @@ export default function ClientDetailScreen() {
         <View style={styles.documentsSection}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Documents</Text>
-            <TouchableOpacity onPress={() => { resetDocForm(); setDocModalVisible(true); }}>
-              <MaterialIcons name="add-circle" size={32} color="#1e3a8a" />
-            </TouchableOpacity>
+            <View style={styles.sectionActions}>
+              <TouchableOpacity
+                onPress={() => setBulkDocsModalVisible(true)}
+                style={styles.bulkDocsIcon}
+                testID="bulk-docs-import"
+              >
+                <MaterialCommunityIcons name="file-upload" size={22} color="#1e3a8a" />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => { resetDocForm(); setDocModalVisible(true); }}>
+                <MaterialIcons name="add-circle" size={32} color="#1e3a8a" />
+              </TouchableOpacity>
+            </View>
           </View>
 
           {documents.length === 0 ? (
@@ -575,7 +656,7 @@ export default function ClientDetailScreen() {
                           doc.uploaded_to_accounting && styles.accountingUploadedText,
                         ]}
                       >
-                        {doc.uploaded_to_accounting ? 'Accounting ✓' : 'Not Uploaded'}
+                        {doc.uploaded_to_accounting ? 'Uploaded ✓' : 'Not Uploaded'}
                       </Text>
                     </TouchableOpacity>
                   </View>
@@ -734,7 +815,7 @@ export default function ClientDetailScreen() {
                   size={24}
                   color="#1e3a8a"
                 />
-                <Text style={styles.checkboxLabel}>Uploaded to Accounting Software</Text>
+                <Text style={styles.checkboxLabel}>Uploaded to System</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -942,6 +1023,85 @@ export default function ClientDetailScreen() {
           </View>
         </View>
       </Modal>
+      {/* Bulk Docs Import Modal */}
+      <Modal
+        visible={bulkDocsModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setBulkDocsModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Bulk Import Documents</Text>
+              <TouchableOpacity onPress={() => { setBulkDocsModalVisible(false); setDocsCsvText(''); }}>
+                <MaterialIcons name="close" size={24} color="#6b7280" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalBody}>
+              <View style={styles.csvInfoBox}>
+                <MaterialIcons name="info-outline" size={18} color="#1e3a8a" />
+                <View style={styles.csvInfoContent}>
+                  <Text style={styles.csvInfoTitle}>CSV Format for {client.firm_name}</Text>
+                  <Text style={styles.csvInfoText}>
+                    Required: doc_name{'\n'}
+                    Optional: status (pending/submitted), storage_location, softcopy_location, last_entry_date, uploaded_to_accounting (true/false)
+                  </Text>
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={styles.pickFileButton}
+                onPress={pickDocsCsvFile}
+              >
+                <MaterialCommunityIcons name="file-document-outline" size={24} color="#1e3a8a" />
+                <Text style={styles.pickFileButtonText}>Pick CSV File</Text>
+              </TouchableOpacity>
+
+              <Text style={styles.inputLabel}>Or Paste CSV Data</Text>
+              <TextInput
+                style={[styles.input, styles.csvTextArea]}
+                placeholder="doc_name,status,storage_location,uploaded_to_accounting&#10;PAN Card,submitted,Cabinet A,true&#10;Bank Statement,pending,,false"
+                placeholderTextColor="#9ca3af"
+                multiline
+                numberOfLines={10}
+                value={docsCsvText}
+                onChangeText={setDocsCsvText}
+              />
+
+              {docsCsvText.length > 0 && (
+                <Text style={styles.csvPreviewText}>
+                  {docsCsvText.split('\n').filter(l => l.trim()).length} rows detected
+                </Text>
+              )}
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => { setBulkDocsModalVisible(false); setDocsCsvText(''); }}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.submitButton, bulkLoading && { opacity: 0.7 }]}
+                onPress={handleBulkDocsImport}
+                disabled={bulkLoading}
+              >
+                {bulkLoading ? (
+                  <ActivityIndicator color="#ffffff" />
+                ) : (
+                  <Text style={styles.submitButtonText}>Import</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
@@ -1022,6 +1182,40 @@ const styles = StyleSheet.create({
     alignItems: 'center', marginBottom: 12,
   },
   sectionTitle: { fontSize: 18, fontWeight: 'bold', color: '#1f2937' },
+  sectionActions: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+  },
+  bulkDocsIcon: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: '#eff6ff',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  csvInfoBox: {
+    flexDirection: 'row', backgroundColor: '#eff6ff',
+    padding: 12, borderRadius: 8, marginBottom: 16, gap: 10,
+  },
+  csvInfoContent: { flex: 1 },
+  csvInfoTitle: {
+    fontSize: 13, fontWeight: 'bold', color: '#1e3a8a', marginBottom: 4,
+  },
+  csvInfoText: { fontSize: 12, color: '#1e3a8a', lineHeight: 18 },
+  pickFileButton: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#eff6ff', padding: 14, borderRadius: 8,
+    borderWidth: 1, borderColor: '#1e3a8a', gap: 8, marginBottom: 12,
+  },
+  pickFileButtonText: {
+    fontSize: 15, fontWeight: '600', color: '#1e3a8a',
+  },
+  csvTextArea: {
+    height: 160, textAlignVertical: 'top',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    fontSize: 13,
+  },
+  csvPreviewText: {
+    fontSize: 12, color: '#10b981', marginTop: 8,
+    fontWeight: '600', textAlign: 'right',
+  },
   emptyState: {
     backgroundColor: '#ffffff', padding: 48, borderRadius: 12, alignItems: 'center',
   },

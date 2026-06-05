@@ -12,6 +12,7 @@ import {
 import { MaterialIcons } from '@expo/vector-icons';
 import * as Notifications from 'expo-notifications';
 import { router } from 'expo-router';
+import { useAuth } from '@/src/context/AuthContext';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
@@ -40,6 +41,7 @@ interface DashboardStats {
 }
 
 export default function DashboardScreen() {
+  const { user, signOut } = useAuth();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -49,6 +51,13 @@ export default function DashboardScreen() {
     checkPendingTasks();
     requestNotificationPermissions();
   }, []);
+
+  const handleSignOut = () => {
+    Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Sign Out', style: 'destructive', onPress: () => signOut() },
+    ]);
+  };
 
   const requestNotificationPermissions = async () => {
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
@@ -123,7 +132,23 @@ export default function DashboardScreen() {
       <View style={styles.content}>
         {/* Welcome Section */}
         <View style={styles.welcomeCard}>
-          <Text style={styles.welcomeText}>Welcome to SHREE RAJ & CO</Text>
+          <View style={styles.welcomeHeader}>
+            <View style={styles.welcomeTextContainer}>
+              <Text style={styles.welcomeText}>Welcome to SHREE RAJ & CO</Text>
+              {user && (
+                <Text style={styles.userText}>
+                  Signed in as {user.name || user.email}
+                </Text>
+              )}
+            </View>
+            <TouchableOpacity
+              style={styles.signOutButton}
+              onPress={handleSignOut}
+              testID="sign-out-button"
+            >
+              <MaterialIcons name="logout" size={20} color="#ef4444" />
+            </TouchableOpacity>
+          </View>
           <Text style={styles.welcomeSubtext}>Register Management System</Text>
         </View>
 
@@ -235,6 +260,28 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+  },
+  welcomeHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  welcomeTextContainer: { flex: 1 },
+  userText: {
+    fontSize: 13,
+    color: '#1e3a8a',
+    marginTop: 4,
+    fontWeight: '500',
+  },
+  signOutButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#fee2e2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 12,
   },
   welcomeText: {
     fontSize: 24,

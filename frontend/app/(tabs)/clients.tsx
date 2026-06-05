@@ -13,8 +13,10 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import * as DocumentPicker from 'expo-document-picker';
+import { useAuth } from '@/src/context/AuthContext';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
@@ -29,11 +31,15 @@ interface Client {
 }
 
 export default function ClientsScreen() {
+  const { token } = useAuth();
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [modalVisible, setModalVisible] = useState(false);
+  const [bulkModalVisible, setBulkModalVisible] = useState(false);
+  const [csvText, setCsvText] = useState('');
+  const [bulkLoading, setBulkLoading] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [formData, setFormData] = useState({
     firm_name: '',
@@ -142,6 +148,72 @@ export default function ClientsScreen() {
     );
   };
 
+  const pickCsvFile = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['text/csv', 'text/comma-separated-values', '*/*'],
+        copyToCacheDirectory: true,
+      });
+
+      if (result.canceled || !result.assets || !result.assets[0]) {
+        return;
+      }
+
+      const file = result.assets[0];
+      const response = await fetch(file.uri);
+      const text = await response.text();
+      setCsvText(text);
+    } catch (error) {
+      console.error('Error picking file:', error);
+      Alert.alert('Error', 'Could not read CSV file');
+    }
+  };
+
+  const handleBulkImport = async () => {
+    if (!csvText.trim()) {
+      Alert.alert('Error', 'Please provide CSV data');
+      return;
+    }
+
+    setBulkLoading(true);
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/bulk/clients`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ csv_data: csvText }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        Alert.alert(
+          'Import Complete',
+          `Created ${data.created_count} clients.${data.errors.length > 0 ? `\n\n${data.errors.length} errors:\n${data.errors.slice(0, 5).join('\n')}` : ''}`,
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                setBulkModalVisible(false);
+                setCsvText('');
+                fetchClients();
+              },
+            },
+          ]
+        );
+      } else {
+        Alert.alert('Error', data.detail || 'Failed to import');
+      }
+    } catch (error) {
+      console.error('Bulk import error:', error);
+      Alert.alert('Error', 'Failed to import clients');
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
   const filteredClients = clients.filter((client) =>
     client.firm_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     client.owner_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -164,15 +236,24 @@ export default function ClientsScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Search Bar */}
-      <View style={styles.searchContainer}>
-        <MaterialIcons name="search" size={24} color="#6b7280" />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search clients..."
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-        />
+      {/* Search Bar with Bulk Import */}
+      <View style={styles.topRow}>
+        <View style={styles.searchContainer}>
+          <MaterialIcons name="search" size={24} color="#6b7280" />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search clients..."
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+        </View>
+        <TouchableOpacity
+          style={styles.bulkButton}
+          onPress={() => setBulkModalVisible(true)}
+          testID="bulk-import-button"
+        >
+          <MaterialCommunityIcons name="file-upload" size={22} color="#ffffff" />
+        </TouchableOpacity>
       </View>
 
       {/* Clients List */}
@@ -322,6 +403,89 @@ export default function ClientsScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+      {/* Bulk Import Modal */}
+      <Modal
+        visible={bulkModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setBulkModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Bulk Import Clients</Text>
+              <TouchableOpacity onPress={() => { setBulkModalVisible(false); setCsvText(''); }}>
+                <MaterialIcons name="close" size={24} color="#6b7280" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalBody}>
+              <View style={styles.csvInfoBox}>
+                <MaterialIcons name="info-outline" size={18} color="#1e3a8a" />
+                <View style={styles.csvInfoContent}>
+                  <Text style={styles.csvInfoTitle}>CSV Format</Text>
+                  <Text style={styles.csvInfoText}>
+                    Required columns: firm_name, owner_name, mobile{'\n'}
+                    Optional: email, address{'\n\n'}
+                    First row must be headers
+                  </Text>
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={styles.pickFileButton}
+                onPress={pickCsvFile}
+                testID="pick-csv-file"
+              >
+                <MaterialCommunityIcons name="file-document-outline" size={24} color="#1e3a8a" />
+                <Text style={styles.pickFileButtonText}>Pick CSV File</Text>
+              </TouchableOpacity>
+
+              <Text style={styles.inputLabel}>Or Paste CSV Data</Text>
+              <TextInput
+                style={[styles.input, styles.csvTextArea]}
+                placeholder="firm_name,owner_name,mobile,email,address&#10;ABC Ltd,John Doe,9876543210,john@abc.com,Mumbai&#10;XYZ Corp,Jane Smith,9876543211,jane@xyz.com,Delhi"
+                placeholderTextColor="#9ca3af"
+                multiline
+                numberOfLines={10}
+                value={csvText}
+                onChangeText={setCsvText}
+                testID="csv-text-input"
+              />
+
+              {csvText.length > 0 && (
+                <Text style={styles.csvPreviewText}>
+                  {csvText.split('\n').filter(l => l.trim()).length} rows detected
+                </Text>
+              )}
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => { setBulkModalVisible(false); setCsvText(''); }}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.submitButton, bulkLoading && { opacity: 0.7 }]}
+                onPress={handleBulkImport}
+                disabled={bulkLoading}
+                testID="bulk-import-submit"
+              >
+                {bulkLoading ? (
+                  <ActivityIndicator color="#ffffff" />
+                ) : (
+                  <Text style={styles.submitButtonText}>Import</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
@@ -334,9 +498,46 @@ const styles = StyleSheet.create({
   loadingText: { marginTop: 16, fontSize: 16, color: '#6b7280' },
   searchContainer: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: '#ffffff',
-    margin: 16, paddingHorizontal: 16, paddingVertical: 12, borderRadius: 12,
+    flex: 1, paddingHorizontal: 16, paddingVertical: 12, borderRadius: 12,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1, shadowRadius: 4, elevation: 3,
+  },
+  topRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8, gap: 10,
+  },
+  bulkButton: {
+    width: 48, height: 48, borderRadius: 12,
+    backgroundColor: '#1e3a8a',
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15, shadowRadius: 4, elevation: 3,
+  },
+  csvInfoBox: {
+    flexDirection: 'row', backgroundColor: '#eff6ff',
+    padding: 12, borderRadius: 8, marginBottom: 16, gap: 10,
+  },
+  csvInfoContent: { flex: 1 },
+  csvInfoTitle: {
+    fontSize: 13, fontWeight: 'bold', color: '#1e3a8a', marginBottom: 4,
+  },
+  csvInfoText: { fontSize: 12, color: '#1e3a8a', lineHeight: 18 },
+  pickFileButton: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#eff6ff', padding: 14, borderRadius: 8,
+    borderWidth: 1, borderColor: '#1e3a8a', gap: 8, marginBottom: 12,
+  },
+  pickFileButtonText: {
+    fontSize: 15, fontWeight: '600', color: '#1e3a8a',
+  },
+  csvTextArea: {
+    height: 160, textAlignVertical: 'top',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    fontSize: 13,
+  },
+  csvPreviewText: {
+    fontSize: 12, color: '#10b981', marginTop: 8,
+    fontWeight: '600', textAlign: 'right',
   },
   searchInput: { flex: 1, marginLeft: 12, fontSize: 16, color: '#1f2937' },
   listContainer: { flex: 1, paddingHorizontal: 16 },
