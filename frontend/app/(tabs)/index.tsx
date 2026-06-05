@@ -10,20 +10,27 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import * as Notifications from 'expo-notifications';
 import { router } from 'expo-router';
 import { useAuth } from '@/src/context/AuthContext';
 
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
+// Lazy load notifications to avoid Expo Go crashes
+let Notifications: any = null;
+try {
+  Notifications = require('expo-notifications');
+  if (Notifications?.setNotificationHandler) {
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowAlert: true,
+        shouldPlaySound: true,
+        shouldSetBadge: true,
+      }),
+    });
+  }
+} catch (e) {
+  console.log('Notifications not available:', e);
+}
 
-// Configure notifications
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-  }),
-});
+const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
 interface DashboardStats {
   clients: { total: number };
@@ -60,16 +67,21 @@ export default function DashboardScreen() {
   };
 
   const requestNotificationPermissions = async () => {
-    const { status: existingStatus } = await Notifications.getPermissionsAsync();
-    let finalStatus = existingStatus;
-    
-    if (existingStatus !== 'granted') {
-      const { status } = await Notifications.requestPermissionsAsync();
-      finalStatus = status;
-    }
-    
-    if (finalStatus !== 'granted') {
-      console.log('Failed to get push notification permissions');
+    if (!Notifications?.getPermissionsAsync) return;
+    try {
+      const { status: existingStatus } = await Notifications.getPermissionsAsync();
+      let finalStatus = existingStatus;
+      
+      if (existingStatus !== 'granted') {
+        const { status } = await Notifications.requestPermissionsAsync();
+        finalStatus = status;
+      }
+      
+      if (finalStatus !== 'granted') {
+        console.log('Failed to get push notification permissions');
+      }
+    } catch (e) {
+      console.log('Notification permission error:', e);
     }
   };
 
@@ -92,16 +104,19 @@ export default function DashboardScreen() {
       const response = await fetch(`${BACKEND_URL}/api/tasks/pending`);
       const pendingTasks = await response.json();
       
-      if (pendingTasks.length > 0) {
-        // Show morning reminder
-        await Notifications.scheduleNotificationAsync({
-          content: {
-            title: 'Good Morning! ☀️',
-            body: `You have ${pendingTasks.length} pending tasks to complete today.`,
-            data: { tasks: pendingTasks },
-          },
-          trigger: null, // Show immediately
-        });
+      if (pendingTasks.length > 0 && Notifications?.scheduleNotificationAsync) {
+        try {
+          await Notifications.scheduleNotificationAsync({
+            content: {
+              title: 'Good Morning! ☀️',
+              body: `You have ${pendingTasks.length} pending tasks to complete today.`,
+              data: { tasks: pendingTasks },
+            },
+            trigger: null,
+          });
+        } catch (notifErr) {
+          console.log('Notification scheduling not available:', notifErr);
+        }
       }
     } catch (error) {
       console.error('Error checking pending tasks:', error);
