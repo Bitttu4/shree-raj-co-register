@@ -1,12 +1,31 @@
 import { Tabs } from 'expo-router';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { Platform } from 'react-native';
+import { Platform, View, Text, Image, StyleSheet } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+function CustomHeader({ title }: { title: string }) {
+  return (
+    <SafeAreaView edges={['top']} style={styles.headerSafeArea}>
+      <View style={styles.header}>
+        <Image
+          source={require('../../assets/images/logo.png')}
+          style={styles.headerLogo}
+          resizeMode="contain"
+        />
+        <View style={styles.headerTextContainer}>
+          <Text style={styles.headerTitle}>SHREE RAJ & CO</Text>
+          <Text style={styles.headerSubtitle}>{title}</Text>
+        </View>
+      </View>
+    </SafeAreaView>
+  );
+}
 
 export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: '#2563eb',
+        tabBarActiveTintColor: '#1e3a8a',
         tabBarInactiveTintColor: '#6b7280',
         tabBarStyle: {
           backgroundColor: '#ffffff',
@@ -20,21 +39,13 @@ export default function TabLayout() {
           fontSize: 12,
           fontWeight: '600',
         },
-        headerStyle: {
-          backgroundColor: '#2563eb',
-        },
-        headerTintColor: '#ffffff',
-        headerTitleStyle: {
-          fontWeight: 'bold',
-          fontSize: 18,
-        },
+        header: ({ options }) => <CustomHeader title={options.title || ''} />,
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
           title: 'Dashboard',
-          headerTitle: 'SHREE RAJ & CO',
           tabBarIcon: ({ color, size }) => (
             <MaterialIcons name="dashboard" size={size} color={color} />
           ),
@@ -44,7 +55,6 @@ export default function TabLayout() {
         name="clients"
         options={{
           title: 'Clients',
-          headerTitle: 'Clients',
           tabBarIcon: ({ color, size }) => (
             <MaterialIcons name="people" size={size} color={color} />
           ),
@@ -53,8 +63,8 @@ export default function TabLayout() {
       <Tabs.Screen
         name="tasks"
         options={{
-          title: 'Tasks',
-          headerTitle: 'Task Management',
+          title: 'Task Management',
+          tabBarLabel: 'Tasks',
           tabBarIcon: ({ color, size }) => (
             <MaterialCommunityIcons name="clipboard-check" size={size} color={color} />
           ),
@@ -63,8 +73,8 @@ export default function TabLayout() {
       <Tabs.Screen
         name="summary"
         options={{
-          title: 'Summary',
-          headerTitle: 'Daily Summary',
+          title: 'Daily Summary',
+          tabBarLabel: 'Summary',
           tabBarIcon: ({ color, size }) => (
             <MaterialIcons name="assessment" size={size} color={color} />
           ),
@@ -73,3 +83,37 @@ export default function TabLayout() {
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  headerSafeArea: {
+    backgroundColor: '#ffffff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: '#ffffff',
+  },
+  headerLogo: {
+    width: 50,
+    height: 50,
+    marginRight: 12,
+  },
+  headerTextContainer: {
+    flex: 1,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1e3a8a',
+    letterSpacing: 0.5,
+  },
+  headerSubtitle: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginTop: 2,
+  },
+});

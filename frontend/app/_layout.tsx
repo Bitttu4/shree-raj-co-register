@@ -1,34 +1,22 @@
 import { Stack } from 'expo-router';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import * as SplashScreen from 'expo-splash-screen';
-import { Asset } from 'expo-asset';
-import * as Font from 'expo-font';
+import { View } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-// Keep the splash screen visible while we fetch resources
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
+  const [appIsReady, setAppIsReady] = useState(false);
+
   useEffect(() => {
     async function prepare() {
       try {
-        // Pre-warm icon assets for Android Expo Go
-        const iconAssets = [
-          require('../assets/icon.png'),
-          require('../assets/adaptive-icon.png'),
-          require('../assets/favicon.png'),
-        ];
-        
-        await Asset.loadAsync(iconAssets);
-        
-        // Load fonts if needed
-        // await Font.loadAsync({...});
-        
-        // Artificially delay for 1 second
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise((resolve) => setTimeout(resolve, 500));
       } catch (e) {
         console.warn(e);
       } finally {
-        // Tell the application to render
+        setAppIsReady(true);
         await SplashScreen.hideAsync();
       }
     }
@@ -36,9 +24,16 @@ export default function RootLayout() {
     prepare();
   }, []);
 
+  if (!appIsReady) {
+    return <View style={{ flex: 1, backgroundColor: '#ffffff' }} />;
+  }
+
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-    </Stack>
+    <SafeAreaProvider>
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="client-detail" options={{ headerShown: false }} />
+      </Stack>
+    </SafeAreaProvider>
   );
 }

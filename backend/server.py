@@ -62,21 +62,23 @@ class Document(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     client_id: str
     doc_name: str
-    status: str  # required, submitted, pending
+    status: str  # submitted, pending
     storage_location: Optional[str] = None  # Physical location
     softcopy_location: Optional[str] = None  # Where softcopy is stored (e.g., "D:/Clients/ABC Ltd/")
     return_status: bool = False  # False=pending(red), True=returned(green)
-    deadline_date: Optional[str] = None  # Last date for accounting software entry
+    last_entry_date: Optional[str] = None  # Last date entered in accounting software
+    uploaded_to_accounting: bool = False  # Whether uploaded to accounting software
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class DocumentCreate(BaseModel):
     client_id: str
     doc_name: str
-    status: str
+    status: str = "pending"
     storage_location: Optional[str] = None
     softcopy_location: Optional[str] = None
     return_status: bool = False
-    deadline_date: Optional[str] = None
+    last_entry_date: Optional[str] = None
+    uploaded_to_accounting: bool = False
 
 class DocumentUpdate(BaseModel):
     doc_name: Optional[str] = None
@@ -84,7 +86,8 @@ class DocumentUpdate(BaseModel):
     storage_location: Optional[str] = None
     softcopy_location: Optional[str] = None
     return_status: Optional[bool] = None
-    deadline_date: Optional[str] = None
+    last_entry_date: Optional[str] = None
+    uploaded_to_accounting: Optional[bool] = None
 
 # Task Models
 class Task(BaseModel):
@@ -293,7 +296,7 @@ async def delete_task(task_id: str):
 
 @api_router.post("/ai/generate-message")
 async def generate_client_message(request: MessageGenerationRequest):
-    """Generate personalized message for clients using AI"""
+    """Generate personalized message for clients using AI - returns plain text"""
     try:
         # Get client details
         client = await db.clients.find_one({"id": request.client_id})
@@ -327,44 +330,42 @@ Pending Tasks ({len(pending_tasks)}):
         # Initialize LLM
         llm = LlmChat(
             api_key=os.environ['EMERGENT_LLM_KEY'],
-            session_id=f"message-{request.client_id}",
-            system_message="You are a professional CA firm assistant. Generate polite, professional messages to clients regarding their pending documents and tasks. Keep messages concise and actionable."
+            session_id=f"message-{request.client_id}-{datetime.utcnow().timestamp()}",
+            system_message="You are a professional CA firm assistant. Generate polite, professional messages to clients regarding their pending documents and tasks. Output PLAIN TEXT only - no markdown, no asterisks, no bold/italic formatting. Use simple text suitable for WhatsApp."
         ).with_model("openai", "gpt-4o")
         
-        prompt = f"""Generate a professional, friendly WhatsApp message for the following client:
+        prompt = f"""Generate a professional, friendly WhatsApp message in PLAIN TEXT format (no markdown, no asterisks, no special formatting) for the following client:
 
 {context}
 
 The message should:
-1. Be polite and professional
-2. Mention pending documents/tasks specifically
-3. Request prompt submission
-4. Be suitable for WhatsApp (concise, under 200 words)
-5. End with firm name: SHREE RAJ & CO
+1. Start with a warm greeting addressing the owner by name
+2. Politely mention the pending documents that need to be submitted
+3. Request prompt submission of these documents
+4. Be concise (under 200 words)
+5. End with: "Regards, SHREE RAJ & CO"
 
-Generate ONLY the message text, no additional formatting or quotes."""
+IMPORTANT: Output PLAIN TEXT only. Do NOT use:
+- Markdown formatting (no **, *, _, #, etc.)
+- Bullet points with asterisks
+- Bold or italic text
+- Any special characters for formatting
+
+Use simple text with line breaks. The message should be ready to copy-paste directly into WhatsApp.
+
+Generate ONLY the message text."""
         
         user_message = UserMessage(text=prompt)
         
-        # Stream response
-        async def generate_stream():
-            full_message = ""
-            async for event in llm.stream_message(user_message):
-                if isinstance(event, TextDelta):
-                    full_message += event.content
-                    yield f"data: {event.content}\n\n"
-                elif isinstance(event, StreamDone):
-                    yield f"data: [DONE]\n\n"
-                    break
+        # Get full response (non-streaming for easier copy-paste)
+        full_message = ""
+        async for event in llm.stream_message(user_message):
+            if isinstance(event, TextDelta):
+                full_message += event.content
+            elif isinstance(event, StreamDone):
+                break
         
-        return StreamingResponse(
-            generate_stream(),
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "X-Accel-Buffering": "no"
-            }
-        )
+        return {"message": full_message, "client": client['firm_name']}
         
     except Exception as e:
         logger.error(f"Error generating message: {str(e)}")
@@ -372,7 +373,7 @@ Generate ONLY the message text, no additional formatting or quotes."""
 
 @api_router.post("/ai/generate-cheatsheet")
 async def generate_cheatsheet(request: CheatsheetRequest):
-    """Generate cheatsheet content for required documents"""
+    """Generate cheatsheet content for documents - plain text format"""
     try:
         # Get client details
         client = await db.clients.find_one({"id": request.client_id})
@@ -382,39 +383,44 @@ async def generate_cheatsheet(request: CheatsheetRequest):
         # Get all documents
         documents = await db.documents.find({"client_id": request.client_id}).to_list(1000)
         
-        required_docs = [doc for doc in documents if doc['status'] == 'required']
         submitted_docs = [doc for doc in documents if doc['status'] == 'submitted']
         pending_docs = [doc for doc in documents if doc['status'] == 'pending']
         
         # Initialize LLM
         llm = LlmChat(
             api_key=os.environ['EMERGENT_LLM_KEY'],
-            session_id=f"cheatsheet-{request.client_id}",
-            system_message="You are a professional document organizer for a CA firm. Create clean, organized cheatsheets."
+            session_id=f"cheatsheet-{request.client_id}-{datetime.utcnow().timestamp()}",
+            system_message="You are a professional document organizer for a CA firm. Create clean, organized cheatsheets in PLAIN TEXT format only. No markdown, no asterisks, no special formatting."
         ).with_model("openai", "gpt-4o")
         
-        prompt = f"""Create a formatted cheatsheet for the following client's documents:
+        prompt = f"""Create a formatted cheatsheet in PLAIN TEXT format (no markdown) for the following client's documents:
 
 Client: {client['firm_name']}
 Owner: {client['owner_name']}
-
-REQUIRED DOCUMENTS ({len(required_docs)}):
-{chr(10).join([f"• {doc['doc_name']}" for doc in required_docs]) if required_docs else "None"}
+Mobile: {client['mobile']}
 
 SUBMITTED DOCUMENTS ({len(submitted_docs)}):
-{chr(10).join([f"• {doc['doc_name']} - Location: {doc.get('storage_location', 'N/A')}" for doc in submitted_docs]) if submitted_docs else "None"}
+{chr(10).join([f"- {doc['doc_name']} | Storage: {doc.get('storage_location', 'N/A')} | Softcopy: {doc.get('softcopy_location', 'N/A')} | Accounting: {'Uploaded' if doc.get('uploaded_to_accounting') else 'Not Uploaded'}" for doc in submitted_docs]) if submitted_docs else "None"}
 
 PENDING DOCUMENTS ({len(pending_docs)}):
-{chr(10).join([f"• {doc['doc_name']}" for doc in pending_docs]) if pending_docs else "None"}
+{chr(10).join([f"- {doc['doc_name']}" for doc in pending_docs]) if pending_docs else "None"}
 
-Create a well-organized, professional cheatsheet in plain text format that can be easily converted to an image. Include:
-1. Header with firm name and date
-2. Clear sections for each document category
-3. Status indicators (✓, ⏳, ❌)
-4. Storage locations where applicable
-5. Footer with SHREE RAJ & CO
+Create a well-organized, professional cheatsheet in PLAIN TEXT format. Include:
+1. Header: "SHREE RAJ & CO - DOCUMENT CHEATSHEET" and date
+2. Client info section
+3. Clear sections for SUBMITTED and PENDING documents
+4. Storage locations
+5. Status indicators using simple text (no emoji needed, use [DONE], [PENDING] etc.)
+6. Footer with firm name
 
-Make it clean and professional."""
+IMPORTANT: Output PLAIN TEXT only:
+- NO markdown formatting (no **, *, _, #, etc.)
+- NO asterisks for bullets (use dashes - or letters)
+- NO bold/italic formatting
+- Use line breaks and dashes for separation
+- Use simple text dividers like ---- or ====
+
+Make it clean, professional, and ready for sharing as image or copy-paste."""
         
         user_message = UserMessage(text=prompt)
         
@@ -434,7 +440,7 @@ Make it clean and professional."""
 
 @api_router.post("/ai/daily-summary")
 async def generate_daily_summary(request: DailySummaryRequest):
-    """Generate AI-powered daily summary"""
+    """Generate AI-powered daily summary in plain text format"""
     try:
         # Use today's date if not provided
         target_date = request.date if request.date else datetime.utcnow().strftime("%Y-%m-%d")
@@ -455,37 +461,46 @@ async def generate_daily_summary(request: DailySummaryRequest):
         # Initialize LLM
         llm = LlmChat(
             api_key=os.environ['EMERGENT_LLM_KEY'],
-            session_id=f"summary-{target_date}",
-            system_message="You are a professional CA firm assistant creating daily summary reports."
+            session_id=f"summary-{target_date}-{datetime.utcnow().timestamp()}",
+            system_message="You are a professional CA firm assistant creating daily summary reports in PLAIN TEXT format only. No markdown formatting."
         ).with_model("openai", "gpt-4o")
         
-        prompt = f"""Create a professional daily summary report for SHREE RAJ & CO:
+        prompt = f"""Create a professional daily summary report in PLAIN TEXT FORMAT for SHREE RAJ & CO:
 
 DATE: {target_date}
 
 DOCUMENTS SUBMITTED TODAY ({len(submitted_today)}):
-{chr(10).join([f"• {doc['doc_name']} - Client: {next((c['firm_name'] for c in all_clients if c['id'] == doc['client_id']), 'Unknown')}" for doc in submitted_today]) if submitted_today else "None"}
+{chr(10).join([f"- {doc['doc_name']} | Client: {next((c['firm_name'] for c in all_clients if c['id'] == doc['client_id']), 'Unknown')}" for doc in submitted_today]) if submitted_today else "None"}
 
 TASKS ASSIGNED TODAY ({len(today_tasks)}):
-{chr(10).join([f"• {task['task_name']}" for task in today_tasks]) if today_tasks else "None"}
+{chr(10).join([f"- {task['task_name']}" for task in today_tasks]) if today_tasks else "None"}
 
 TASKS COMPLETED TODAY ({len(completed_tasks)}):
-{chr(10).join([f"• {task['task_name']}" for task in completed_tasks]) if completed_tasks else "None"}
+{chr(10).join([f"- {task['task_name']}" for task in completed_tasks]) if completed_tasks else "None"}
 
 PENDING TASKS ({len(pending_tasks)}):
-{chr(10).join([f"• {task['task_name']}" for task in pending_tasks[:5]]) if pending_tasks else "None"}
+{chr(10).join([f"- {task['task_name']}" for task in pending_tasks[:5]]) if pending_tasks else "None"}
 {f"... and {len(pending_tasks) - 5} more" if len(pending_tasks) > 5 else ""}
 
 TOTAL CLIENTS: {len(all_clients)}
 
-Create a formatted, professional summary report that can be converted to PDF. Include:
-1. Professional header with firm name and date
-2. Key metrics and statistics
-3. Detailed sections for each category
-4. Action items or recommendations
-5. Professional footer
+Create a formatted, professional summary in PLAIN TEXT for WhatsApp sharing. Include:
+1. Header: "SHREE RAJ & CO - DAILY SUMMARY" and date
+2. Key metrics section
+3. Detailed sections for documents submitted, tasks assigned, tasks completed
+4. Pending tasks overview
+5. Brief recommendations or action items
+6. Professional sign-off
 
-Make it executive-ready for the boss."""
+IMPORTANT: Output PLAIN TEXT only:
+- NO markdown formatting (no **, *, _, #, etc.)
+- NO asterisks for bullets (use dashes - instead)
+- NO bold or italic text
+- Use simple line breaks and dashes (---) for separation
+- Use ALL CAPS for section headers
+- Make it suitable for direct copy-paste to WhatsApp
+
+The output should be ready to copy and paste directly into WhatsApp without any formatting issues."""
         
         user_message = UserMessage(text=prompt)
         

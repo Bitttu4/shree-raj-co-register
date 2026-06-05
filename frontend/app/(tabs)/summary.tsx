@@ -144,7 +144,13 @@ export default function SummaryScreen() {
                 <Text style={styles.summaryTitle}>Summary Report</Text>
                 <Text style={styles.summaryDate}>{summaryData.date}</Text>
               </View>
-              <Text style={styles.summaryText}>{summaryData.summary}</Text>
+              <View style={styles.copyHintBox}>
+                <MaterialIcons name="content-copy" size={16} color="#10b981" />
+                <Text style={styles.copyHintText}>
+                  Plain text format - ready to copy & paste to WhatsApp
+                </Text>
+              </View>
+              <Text style={styles.summaryText} selectable>{summaryData.summary}</Text>
             </View>
 
             {/* Action Buttons */}
@@ -153,15 +159,15 @@ export default function SummaryScreen() {
                 style={styles.shareButton}
                 onPress={shareSummary}
               >
-                <MaterialIcons name="share" size={20} color="#2563eb" />
-                <Text style={styles.shareButtonText}>Share Summary</Text>
+                <MaterialIcons name="share" size={20} color="#ffffff" />
+                <Text style={styles.shareButtonText}>Share via WhatsApp</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
                 style={styles.regenerateButton}
                 onPress={generateSummary}
               >
-                <MaterialIcons name="refresh" size={20} color="#ffffff" />
+                <MaterialIcons name="refresh" size={20} color="#1e3a8a" />
                 <Text style={styles.regenerateButtonText}>Regenerate</Text>
               </TouchableOpacity>
             </View>
@@ -324,15 +330,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 16,
     borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#2563eb',
-    backgroundColor: '#ffffff',
+    backgroundColor: '#25d366',
     gap: 8,
   },
   shareButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#2563eb',
+    color: '#ffffff',
   },
   regenerateButton: {
     flex: 1,
@@ -341,13 +345,29 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 16,
     borderRadius: 8,
-    backgroundColor: '#2563eb',
+    borderWidth: 1,
+    borderColor: '#1e3a8a',
+    backgroundColor: '#ffffff',
     gap: 8,
   },
   regenerateButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#ffffff',
+    color: '#1e3a8a',
+  },
+  copyHintBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ecfdf5',
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 12,
+    gap: 6,
+  },
+  copyHintText: {
+    fontSize: 12,
+    color: '#10b981',
+    fontWeight: '600',
   },
   infoCard: {
     backgroundColor: '#eff6ff',

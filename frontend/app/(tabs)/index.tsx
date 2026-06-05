@@ -271,7 +271,7 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   blueCard: {
-    backgroundColor: '#2563eb',
+    backgroundColor: '#1e3a8a',
   },
   orangeCard: {
     backgroundColor: '#f59e0b',

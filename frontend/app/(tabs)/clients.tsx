@@ -10,6 +10,8 @@ import {
   Modal,
   ActivityIndicator,
   RefreshControl,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -32,6 +34,7 @@ export default function ClientsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [modalVisible, setModalVisible] = useState(false);
+  const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [formData, setFormData] = useState({
     firm_name: '',
     owner_name: '',
@@ -58,37 +61,85 @@ export default function ClientsScreen() {
     }
   };
 
-  const handleCreateClient = async () => {
+  const resetForm = () => {
+    setFormData({
+      firm_name: '',
+      owner_name: '',
+      mobile: '',
+      email: '',
+      address: '',
+    });
+    setEditingClient(null);
+  };
+
+  const openAddModal = () => {
+    resetForm();
+    setModalVisible(true);
+  };
+
+  const openEditModal = (client: Client) => {
+    setEditingClient(client);
+    setFormData({
+      firm_name: client.firm_name,
+      owner_name: client.owner_name,
+      mobile: client.mobile,
+      email: client.email || '',
+      address: client.address || '',
+    });
+    setModalVisible(true);
+  };
+
+  const handleSaveClient = async () => {
     if (!formData.firm_name || !formData.owner_name || !formData.mobile) {
       Alert.alert('Error', 'Please fill in all required fields');
       return;
     }
 
     try {
-      const response = await fetch(`${BACKEND_URL}/api/clients`, {
-        method: 'POST',
+      const url = editingClient
+        ? `${BACKEND_URL}/api/clients/${editingClient.id}`
+        : `${BACKEND_URL}/api/clients`;
+      const method = editingClient ? 'PUT' : 'POST';
+
+      const response = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
       });
 
       if (response.ok) {
-        Alert.alert('Success', 'Client created successfully');
         setModalVisible(false);
-        setFormData({
-          firm_name: '',
-          owner_name: '',
-          mobile: '',
-          email: '',
-          address: '',
-        });
+        resetForm();
         fetchClients();
       } else {
-        Alert.alert('Error', 'Failed to create client');
+        Alert.alert('Error', `Failed to ${editingClient ? 'update' : 'create'} client`);
       }
     } catch (error) {
-      console.error('Error creating client:', error);
-      Alert.alert('Error', 'Failed to create client');
+      console.error('Error saving client:', error);
+      Alert.alert('Error', 'Failed to save client');
     }
+  };
+
+  const handleDeleteClient = (client: Client) => {
+    Alert.alert(
+      'Delete Client',
+      `Delete "${client.firm_name}"? This will also delete all related documents and tasks.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await fetch(`${BACKEND_URL}/api/clients/${client.id}`, { method: 'DELETE' });
+              fetchClients();
+            } catch (error) {
+              console.error('Error deleting client:', error);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const filteredClients = clients.filter((client) =>
@@ -105,7 +156,7 @@ export default function ClientsScreen() {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#2563eb" />
+        <ActivityIndicator size="large" color="#1e3a8a" />
         <Text style={styles.loadingText}>Loading clients...</Text>
       </View>
     );
@@ -145,16 +196,22 @@ export default function ClientsScreen() {
               key={client.id}
               style={styles.clientCard}
               onPress={() => router.push(`/client-detail?id=${client.id}`)}
+              onLongPress={() => handleDeleteClient(client)}
             >
               <View style={styles.clientHeader}>
                 <View style={styles.clientIcon}>
-                  <MaterialIcons name="business" size={24} color="#2563eb" />
+                  <MaterialIcons name="business" size={24} color="#1e3a8a" />
                 </View>
                 <View style={styles.clientInfo}>
                   <Text style={styles.clientName}>{client.firm_name}</Text>
                   <Text style={styles.clientOwner}>{client.owner_name}</Text>
                 </View>
-                <MaterialIcons name="chevron-right" size={24} color="#9ca3af" />
+                <TouchableOpacity
+                  style={styles.editIconButton}
+                  onPress={() => openEditModal(client)}
+                >
+                  <MaterialIcons name="edit" size={20} color="#1e3a8a" />
+                </TouchableOpacity>
               </View>
               
               <View style={styles.clientDetails}>
@@ -169,31 +226,36 @@ export default function ClientsScreen() {
                   </View>
                 )}
               </View>
+              <View style={styles.hintRow}>
+                <Text style={styles.hintText}>Tap to view docs • Long press to delete</Text>
+              </View>
             </TouchableOpacity>
           ))
         )}
       </ScrollView>
 
       {/* Add Button */}
-      <TouchableOpacity
-        style={styles.fab}
-        onPress={() => setModalVisible(true)}
-      >
+      <TouchableOpacity style={styles.fab} onPress={openAddModal}>
         <MaterialIcons name="add" size={32} color="#ffffff" />
       </TouchableOpacity>
 
-      {/* Add Client Modal */}
+      {/* Add/Edit Client Modal */}
       <Modal
         visible={modalVisible}
         animationType="slide"
         transparent={true}
         onRequestClose={() => setModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Add New Client</Text>
-              <TouchableOpacity onPress={() => setModalVisible(false)}>
+              <Text style={styles.modalTitle}>
+                {editingClient ? 'Edit Client' : 'Add New Client'}
+              </Text>
+              <TouchableOpacity onPress={() => { setModalVisible(false); resetForm(); }}>
                 <MaterialIcons name="close" size={24} color="#6b7280" />
               </TouchableOpacity>
             </View>
@@ -204,9 +266,7 @@ export default function ClientsScreen() {
                 style={styles.input}
                 placeholder="Enter firm name"
                 value={formData.firm_name}
-                onChangeText={(text) =>
-                  setFormData({ ...formData, firm_name: text })
-                }
+                onChangeText={(text) => setFormData({ ...formData, firm_name: text })}
               />
 
               <Text style={styles.inputLabel}>Owner Name *</Text>
@@ -214,9 +274,7 @@ export default function ClientsScreen() {
                 style={styles.input}
                 placeholder="Enter owner name"
                 value={formData.owner_name}
-                onChangeText={(text) =>
-                  setFormData({ ...formData, owner_name: text })
-                }
+                onChangeText={(text) => setFormData({ ...formData, owner_name: text })}
               />
 
               <Text style={styles.inputLabel}>Mobile Number *</Text>
@@ -225,9 +283,7 @@ export default function ClientsScreen() {
                 placeholder="Enter mobile number"
                 keyboardType="phone-pad"
                 value={formData.mobile}
-                onChangeText={(text) =>
-                  setFormData({ ...formData, mobile: text })
-                }
+                onChangeText={(text) => setFormData({ ...formData, mobile: text })}
               />
 
               <Text style={styles.inputLabel}>Email</Text>
@@ -236,9 +292,7 @@ export default function ClientsScreen() {
                 placeholder="Enter email address"
                 keyboardType="email-address"
                 value={formData.email}
-                onChangeText={(text) =>
-                  setFormData({ ...formData, email: text })
-                }
+                onChangeText={(text) => setFormData({ ...formData, email: text })}
               />
 
               <Text style={styles.inputLabel}>Address</Text>
@@ -248,233 +302,113 @@ export default function ClientsScreen() {
                 multiline
                 numberOfLines={3}
                 value={formData.address}
-                onChangeText={(text) =>
-                  setFormData({ ...formData, address: text })
-                }
+                onChangeText={(text) => setFormData({ ...formData, address: text })}
               />
             </ScrollView>
 
             <View style={styles.modalFooter}>
               <TouchableOpacity
                 style={styles.cancelButton}
-                onPress={() => setModalVisible(false)}
+                onPress={() => { setModalVisible(false); resetForm(); }}
               >
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.submitButton}
-                onPress={handleCreateClient}
-              >
-                <Text style={styles.submitButtonText}>Create Client</Text>
+              <TouchableOpacity style={styles.submitButton} onPress={handleSaveClient}>
+                <Text style={styles.submitButtonText}>
+                  {editingClient ? 'Update' : 'Create Client'}
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f3f4f6',
-  },
+  container: { flex: 1, backgroundColor: '#f3f4f6' },
   loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f3f4f6',
+    flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f3f4f6',
   },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: '#6b7280',
-  },
+  loadingText: { marginTop: 16, fontSize: 16, color: '#6b7280' },
   searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#ffffff',
-    margin: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    flexDirection: 'row', alignItems: 'center', backgroundColor: '#ffffff',
+    margin: 16, paddingHorizontal: 16, paddingVertical: 12, borderRadius: 12,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1, shadowRadius: 4, elevation: 3,
   },
-  searchInput: {
-    flex: 1,
-    marginLeft: 12,
-    fontSize: 16,
-    color: '#1f2937',
-  },
-  listContainer: {
-    flex: 1,
-    paddingHorizontal: 16,
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 64,
-  },
-  emptyText: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#6b7280',
-    marginTop: 16,
-  },
-  emptySubtext: {
-    fontSize: 14,
-    color: '#9ca3af',
-    marginTop: 8,
-  },
+  searchInput: { flex: 1, marginLeft: 12, fontSize: 16, color: '#1f2937' },
+  listContainer: { flex: 1, paddingHorizontal: 16 },
+  emptyContainer: { alignItems: 'center', justifyContent: 'center', paddingVertical: 64 },
+  emptyText: { fontSize: 20, fontWeight: '600', color: '#6b7280', marginTop: 16 },
+  emptySubtext: { fontSize: 14, color: '#9ca3af', marginTop: 8 },
   clientCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    backgroundColor: '#ffffff', borderRadius: 12, padding: 16, marginBottom: 16,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1, shadowRadius: 4, elevation: 3,
   },
-  clientHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
+  clientHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
   clientIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#dbeafe',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
+    width: 48, height: 48, borderRadius: 24, backgroundColor: '#dbeafe',
+    alignItems: 'center', justifyContent: 'center', marginRight: 12,
   },
-  clientInfo: {
-    flex: 1,
+  clientInfo: { flex: 1 },
+  clientName: { fontSize: 18, fontWeight: 'bold', color: '#1f2937', marginBottom: 4 },
+  clientOwner: { fontSize: 14, color: '#6b7280' },
+  editIconButton: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: '#eff6ff', alignItems: 'center', justifyContent: 'center',
   },
-  clientName: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1f2937',
-    marginBottom: 4,
+  clientDetails: { paddingLeft: 60 },
+  detailRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+  detailText: { fontSize: 14, color: '#6b7280', marginLeft: 8 },
+  hintRow: {
+    paddingLeft: 60, marginTop: 8, paddingTop: 8,
+    borderTopWidth: 1, borderTopColor: '#f3f4f6',
   },
-  clientOwner: {
-    fontSize: 14,
-    color: '#6b7280',
-  },
-  clientDetails: {
-    paddingLeft: 60,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  detailText: {
-    fontSize: 14,
-    color: '#6b7280',
-    marginLeft: 8,
-  },
+  hintText: { fontSize: 11, color: '#9ca3af', fontStyle: 'italic' },
   fab: {
-    position: 'absolute',
-    right: 24,
-    bottom: 24,
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#2563eb',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
+    position: 'absolute', right: 24, bottom: 24,
+    width: 64, height: 64, borderRadius: 32, backgroundColor: '#1e3a8a',
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3, shadowRadius: 8, elevation: 8,
   },
   modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
+    flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.5)', justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#ffffff',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    backgroundColor: '#ffffff', borderTopLeftRadius: 24, borderTopRightRadius: 24,
     maxHeight: '90%',
   },
   modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    padding: 20, borderBottomWidth: 1, borderBottomColor: '#e5e7eb',
   },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1f2937',
-  },
-  modalBody: {
-    padding: 20,
-  },
+  modalTitle: { fontSize: 20, fontWeight: 'bold', color: '#1f2937' },
+  modalBody: { padding: 20 },
   inputLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#374151',
-    marginBottom: 8,
-    marginTop: 12,
+    fontSize: 14, fontWeight: '600', color: '#374151',
+    marginBottom: 8, marginTop: 12,
   },
   input: {
-    backgroundColor: '#f9fafb',
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    color: '#1f2937',
+    backgroundColor: '#f9fafb', borderWidth: 1, borderColor: '#e5e7eb',
+    borderRadius: 8, padding: 12, fontSize: 16, color: '#1f2937',
   },
-  textArea: {
-    height: 80,
-    textAlignVertical: 'top',
-  },
+  textArea: { height: 80, textAlignVertical: 'top' },
   modalFooter: {
-    flexDirection: 'row',
-    padding: 20,
-    borderTopWidth: 1,
-    borderTopColor: '#e5e7eb',
-    gap: 12,
+    flexDirection: 'row', padding: 20,
+    borderTopWidth: 1, borderTopColor: '#e5e7eb', gap: 12,
   },
   cancelButton: {
-    flex: 1,
-    padding: 16,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    alignItems: 'center',
+    flex: 1, padding: 16, borderRadius: 8,
+    borderWidth: 1, borderColor: '#d1d5db', alignItems: 'center',
   },
-  cancelButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#6b7280',
-  },
+  cancelButtonText: { fontSize: 16, fontWeight: '600', color: '#6b7280' },
   submitButton: {
-    flex: 1,
-    padding: 16,
-    borderRadius: 8,
-    backgroundColor: '#2563eb',
-    alignItems: 'center',
+    flex: 1, padding: 16, borderRadius: 8,
+    backgroundColor: '#1e3a8a', alignItems: 'center',
   },
-  submitButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
+  submitButtonText: { fontSize: 16, fontWeight: '600', color: '#ffffff' },
 });
