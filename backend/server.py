@@ -542,7 +542,6 @@ async def get_dashboard_stats():
         total_documents = await db.documents.count_documents({})
         pending_documents = await db.documents.count_documents({"status": "pending"})
         submitted_documents = await db.documents.count_documents({"status": "submitted"})
-        required_documents = await db.documents.count_documents({"status": "required"})
         
         # Get long pending tasks (more than 7 days old)
         seven_days_ago = datetime.utcnow().timestamp() - (7 * 24 * 60 * 60)
@@ -564,8 +563,7 @@ async def get_dashboard_stats():
             "documents": {
                 "total": total_documents,
                 "pending": pending_documents,
-                "submitted": submitted_documents,
-                "required": required_documents
+                "submitted": submitted_documents
             }
         }
     except Exception as e:

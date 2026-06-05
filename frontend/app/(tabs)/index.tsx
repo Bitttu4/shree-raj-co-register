@@ -36,7 +36,6 @@ interface DashboardStats {
     total: number;
     pending: number;
     submitted: number;
-    required: number;
   };
 }
 
@@ -200,11 +199,6 @@ export default function DashboardScreen() {
           <View style={styles.quickStatRow}>
             <Text style={styles.quickStatLabel}>Submitted Documents</Text>
             <Text style={styles.quickStatValue}>{stats?.documents.submitted || 0}</Text>
-          </View>
-          
-          <View style={styles.quickStatRow}>
-            <Text style={styles.quickStatLabel}>Required Documents</Text>
-            <Text style={styles.quickStatValue}>{stats?.documents.required || 0}</Text>
           </View>
         </View>
       </View>
