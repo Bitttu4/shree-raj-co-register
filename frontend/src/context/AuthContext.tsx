@@ -2,6 +2,10 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { storage } from '@/src/utils/storage';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
+
+if (!BACKEND_URL) {
+  console.error("EXPO_PUBLIC_BACKEND_URL is undefined");
+}
 const TOKEN_KEY = 'auth_token';
 
 interface User {
