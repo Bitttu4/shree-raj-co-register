@@ -22,7 +22,8 @@
       "edgeToEdgeEnabled": true,
       "permissions": [
         "NOTIFICATIONS"
-      ]
+      ],
+      "package": "com.bitttu4.frontend"
     },
     "web": {
       "bundler": "metro",
@@ -45,6 +46,12 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "bafebd7b-3366-4be9-8ff3-c9f1ab0d1e55"
+      }
     }
   }
 }
