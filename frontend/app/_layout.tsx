@@ -20,7 +20,7 @@ function RootLayoutNav() {
     if (!user && !inAuthScreen) {
       router.replace('/auth');
     } else if (user && inAuthScreen) {
-      router.replace('/');
+      router.replace('/(tabs)');
     }
   }, [user, loading, segments]);
 

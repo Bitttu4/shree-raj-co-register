@@ -15,7 +15,7 @@ from jose import jwt, JWTError
 from passlib.context import CryptContext
 import csv
 import io
-from emergentintegrations.llm.chat import LlmChat, UserMessage, TextDelta, StreamDone
+# from emergentintegrations.llm.chat import LlmChat, UserMessage, TextDelta, StreamDone
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -543,239 +543,35 @@ async def delete_task(task_id: str):
 # ==================== AI-POWERED ENDPOINTS ====================
 
 @api_router.post("/ai/generate-message")
+@api_router.post("/ai/generate-message")
 async def generate_client_message(request: MessageGenerationRequest):
-    """Generate personalized message for clients using AI - returns plain text"""
-    try:
-        # Get client details
-        client = await db.clients.find_one({"id": request.client_id})
-        if not client:
-            raise HTTPException(status_code=404, detail="Client not found")
-        
-        # Get pending documents
-        pending_docs = await db.documents.find({
-            "client_id": request.client_id,
-            "status": "pending"
-        }).to_list(100)
-        
-        # Get pending tasks
-        pending_tasks = await db.tasks.find({
-            "client_id": request.client_id,
-            "is_completed": False
-        }).to_list(100)
-        
-        # Prepare context for AI
-        context = f"""
-Client: {client['firm_name']}
-Owner: {client['owner_name']}
+    return {
+        "message": "AI feature temporarily disabled",
+        "client": "N/A"
+    }
 
-Pending Documents ({len(pending_docs)}):
-{chr(10).join([f"- {doc['doc_name']}" for doc in pending_docs]) if pending_docs else "None"}
-
-Pending Tasks ({len(pending_tasks)}):
-{chr(10).join([f"- {task['task_name']}" for task in pending_tasks]) if pending_tasks else "None"}
-"""
-        
-        # Initialize LLM
-        llm = LlmChat(
-            api_key=os.environ['EMERGENT_LLM_KEY'],
-            session_id=f"message-{request.client_id}-{datetime.utcnow().timestamp()}",
-            system_message="You are a professional CA firm assistant. Generate polite, professional messages to clients regarding their pending documents and tasks. Output PLAIN TEXT only - no markdown, no asterisks, no bold/italic formatting. Use simple text suitable for WhatsApp."
-        ).with_model("openai", "gpt-4o")
-        
-        prompt = f"""Generate a professional, friendly WhatsApp message in PLAIN TEXT format (no markdown, no asterisks, no special formatting) for the following client:
-
-{context}
-
-The message should:
-1. Start with a warm greeting addressing the owner by name
-2. Politely mention the pending documents that need to be submitted
-3. Request prompt submission of these documents
-4. Be concise (under 200 words)
-5. End with: "Regards, SHREE RAJ & CO"
-
-IMPORTANT: Output PLAIN TEXT only. Do NOT use:
-- Markdown formatting (no **, *, _, #, etc.)
-- Bullet points with asterisks
-- Bold or italic text
-- Any special characters for formatting
-
-Use simple text with line breaks. The message should be ready to copy-paste directly into WhatsApp.
-
-Generate ONLY the message text."""
-        
-        user_message = UserMessage(text=prompt)
-        
-        # Get full response (non-streaming for easier copy-paste)
-        full_message = ""
-        async for event in llm.stream_message(user_message):
-            if isinstance(event, TextDelta):
-                full_message += event.content
-            elif isinstance(event, StreamDone):
-                break
-        
-        return {"message": full_message, "client": client['firm_name']}
-        
-    except Exception as e:
-        logger.error(f"Error generating message: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 @api_router.post("/ai/generate-cheatsheet")
 async def generate_cheatsheet(request: CheatsheetRequest):
-    """Generate cheatsheet content for documents - plain text format"""
-    try:
-        # Get client details
-        client = await db.clients.find_one({"id": request.client_id})
-        if not client:
-            raise HTTPException(status_code=404, detail="Client not found")
-        
-        # Get all documents
-        documents = await db.documents.find({"client_id": request.client_id}).to_list(1000)
-        
-        submitted_docs = [doc for doc in documents if doc['status'] == 'submitted']
-        pending_docs = [doc for doc in documents if doc['status'] == 'pending']
-        
-        # Initialize LLM
-        llm = LlmChat(
-            api_key=os.environ['EMERGENT_LLM_KEY'],
-            session_id=f"cheatsheet-{request.client_id}-{datetime.utcnow().timestamp()}",
-            system_message="You are a professional document organizer for a CA firm. Create clean, organized cheatsheets in PLAIN TEXT format only. No markdown, no asterisks, no special formatting."
-        ).with_model("openai", "gpt-4o")
-        
-        prompt = f"""Create a formatted cheatsheet in PLAIN TEXT format (no markdown) for the following client's documents:
+    return {
+        "content": "AI feature temporarily disabled",
+        "client": "N/A"
+    }
 
-Client: {client['firm_name']}
-Owner: {client['owner_name']}
-Mobile: {client['mobile']}
-
-SUBMITTED DOCUMENTS ({len(submitted_docs)}):
-{chr(10).join([f"- {doc['doc_name']} | Storage: {doc.get('storage_location', 'N/A')} | Softcopy: {doc.get('softcopy_location', 'N/A')} | Accounting: {'Uploaded' if doc.get('uploaded_to_accounting') else 'Not Uploaded'}" for doc in submitted_docs]) if submitted_docs else "None"}
-
-PENDING DOCUMENTS ({len(pending_docs)}):
-{chr(10).join([f"- {doc['doc_name']}" for doc in pending_docs]) if pending_docs else "None"}
-
-Create a well-organized, professional cheatsheet in PLAIN TEXT format. Include:
-1. Header: "SHREE RAJ & CO - DOCUMENT CHEATSHEET" and date
-2. Client info section
-3. Clear sections for SUBMITTED and PENDING documents
-4. Storage locations
-5. Status indicators using simple text (no emoji needed, use [DONE], [PENDING] etc.)
-6. Footer with firm name
-
-IMPORTANT: Output PLAIN TEXT only:
-- NO markdown formatting (no **, *, _, #, etc.)
-- NO asterisks for bullets (use dashes - or letters)
-- NO bold/italic formatting
-- Use line breaks and dashes for separation
-- Use simple text dividers like ---- or ====
-
-Make it clean, professional, and ready for sharing as image or copy-paste."""
-        
-        user_message = UserMessage(text=prompt)
-        
-        # Get non-streaming response
-        full_response = ""
-        async for event in llm.stream_message(user_message):
-            if isinstance(event, TextDelta):
-                full_response += event.content
-            elif isinstance(event, StreamDone):
-                break
-        
-        return {"content": full_response, "client": client['firm_name']}
-        
-    except Exception as e:
-        logger.error(f"Error generating cheatsheet: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 @api_router.post("/ai/daily-summary")
 async def generate_daily_summary(request: DailySummaryRequest):
-    """Generate AI-powered daily summary in plain text format"""
-    try:
-        # Use today's date if not provided
-        target_date = request.date if request.date else datetime.utcnow().strftime("%Y-%m-%d")
-        
-        # Get all data for the day
-        all_clients = await db.clients.find().to_list(1000)
-        all_tasks = await db.tasks.find().to_list(1000)
-        all_documents = await db.documents.find().to_list(1000)
-        
-        # Filter today's activities
-        today_tasks = [t for t in all_tasks if t['created_at'].strftime("%Y-%m-%d") == target_date]
-        completed_tasks = [t for t in today_tasks if t['is_completed']]
-        pending_tasks = [t for t in all_tasks if not t['is_completed']]
-        
-        # Documents submitted today
-        submitted_today = [d for d in all_documents if d['status'] == 'submitted' and d['created_at'].strftime("%Y-%m-%d") == target_date]
-        
-        # Initialize LLM
-        llm = LlmChat(
-            api_key=os.environ['EMERGENT_LLM_KEY'],
-            session_id=f"summary-{target_date}-{datetime.utcnow().timestamp()}",
-            system_message="You are a professional CA firm assistant creating daily summary reports in PLAIN TEXT format only. No markdown formatting."
-        ).with_model("openai", "gpt-4o")
-        
-        prompt = f"""Create a professional daily summary report in PLAIN TEXT FORMAT for SHREE RAJ & CO:
-
-DATE: {target_date}
-
-DOCUMENTS SUBMITTED TODAY ({len(submitted_today)}):
-{chr(10).join([f"- {doc['doc_name']} | Client: {next((c['firm_name'] for c in all_clients if c['id'] == doc['client_id']), 'Unknown')}" for doc in submitted_today]) if submitted_today else "None"}
-
-TASKS ASSIGNED TODAY ({len(today_tasks)}):
-{chr(10).join([f"- {task['task_name']}" for task in today_tasks]) if today_tasks else "None"}
-
-TASKS COMPLETED TODAY ({len(completed_tasks)}):
-{chr(10).join([f"- {task['task_name']}" for task in completed_tasks]) if completed_tasks else "None"}
-
-PENDING TASKS ({len(pending_tasks)}):
-{chr(10).join([f"- {task['task_name']}" for task in pending_tasks[:5]]) if pending_tasks else "None"}
-{f"... and {len(pending_tasks) - 5} more" if len(pending_tasks) > 5 else ""}
-
-TOTAL CLIENTS: {len(all_clients)}
-
-Create a formatted, professional summary in PLAIN TEXT for WhatsApp sharing. Include:
-1. Header: "SHREE RAJ & CO - DAILY SUMMARY" and date
-2. Key metrics section
-3. Detailed sections for documents submitted, tasks assigned, tasks completed
-4. Pending tasks overview
-5. Brief recommendations or action items
-6. Professional sign-off
-
-IMPORTANT: Output PLAIN TEXT only:
-- NO markdown formatting (no **, *, _, #, etc.)
-- NO asterisks for bullets (use dashes - instead)
-- NO bold or italic text
-- Use simple line breaks and dashes (---) for separation
-- Use ALL CAPS for section headers
-- Make it suitable for direct copy-paste to WhatsApp
-
-The output should be ready to copy and paste directly into WhatsApp without any formatting issues."""
-        
-        user_message = UserMessage(text=prompt)
-        
-        # Get non-streaming response
-        full_response = ""
-        async for event in llm.stream_message(user_message):
-            if isinstance(event, TextDelta):
-                full_response += event.content
-            elif isinstance(event, StreamDone):
-                break
-        
-        return {
-            "summary": full_response,
-            "date": target_date,
-            "stats": {
-                "total_clients": len(all_clients),
-                "documents_submitted_today": len(submitted_today),
-                "tasks_assigned_today": len(today_tasks),
-                "tasks_completed_today": len(completed_tasks),
-                "pending_tasks": len(pending_tasks)
-            }
+    return {
+        "summary": "AI feature temporarily disabled",
+        "date": datetime.utcnow().strftime("%Y-%m-%d"),
+        "stats": {
+            "total_clients": 0,
+            "documents_submitted_today": 0,
+            "tasks_assigned_today": 0,
+            "tasks_completed_today": 0,
+            "pending_tasks": 0
         }
-        
-    except Exception as e:
-        logger.error(f"Error generating daily summary: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
+    }
 # ==================== DASHBOARD STATS ====================
 
 @api_router.get("/dashboard/stats")
