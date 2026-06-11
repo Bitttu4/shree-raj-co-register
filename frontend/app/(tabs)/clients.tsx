@@ -294,7 +294,6 @@ export default function ClientsScreen() {
                   <MaterialIcons name="edit" size={20} color="#1e3a8a" />
                 </TouchableOpacity>
               </View>
-              
               <View style={styles.clientDetails}>
                 <View style={styles.detailRow}>
                   <MaterialIcons name="phone" size={16} color="#6b7280" />
@@ -405,6 +404,7 @@ export default function ClientsScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
       {/* Bulk Import Modal */}
       <Modal
         visible={bulkModalVisible}

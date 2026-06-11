@@ -203,7 +203,6 @@ export default function TasksScreen() {
                     color="#f59e0b"
                   />
                 </TouchableOpacity>
-                
                 <View style={styles.taskContent}>
                   <Text style={styles.taskName}>{task.task_name}</Text>
                   {task.description && (
@@ -250,7 +249,6 @@ export default function TasksScreen() {
                     color="#10b981"
                   />
                 </TouchableOpacity>
-                
                 <View style={styles.taskContent}>
                   <Text style={[styles.taskName, styles.completedTaskName]}>
                     {task.task_name}
