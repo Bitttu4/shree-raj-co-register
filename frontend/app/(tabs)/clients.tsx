@@ -302,13 +302,15 @@ export default function ClientsScreen() {
                 </View>
                 {client.email && (
                   <View style={styles.detailRow}>
-                    <MaterialIcons name="email" size={16} color="#6b7280" />
+                    <MaterialIcons name="email" size={16} color="#646c7c" />
                     <Text style={styles.detailText}>{client.email}</Text>
                   </View>
                 )}
               </View>
               <View style={styles.hintRow}>
-                <Text style={styles.hintText}>Tap to view docs • Long press to delete</Text>
+                <Text style={styles.hintText}>
+                  {'Tap to view docs • Long press to delete'}
+                </Text>
               </View>
             </TouchableOpacity>
           ))
