@@ -1,5 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi import FastAPI, APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -7,12 +6,10 @@ from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 from pathlib import Path
-from pydantic import BaseModel, Field, EmailStr
+from pydantic import BaseModel, Field
 from typing import List, Optional
 import uuid
-from datetime import datetime, timedelta
-from jose import jwt, JWTError
-from passlib.context import CryptContext
+from datetime import datetime
 import csv
 import io
 # from emergentintegrations.llm.chat import LlmChat, UserMessage, TextDelta, StreamDone
@@ -24,17 +21,6 @@ load_dotenv(ROOT_DIR / '.env')
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
-
-# JWT config
-JWT_SECRET_KEY = os.environ['JWT_SECRET_KEY']
-JWT_ALGORITHM = os.environ.get('JWT_ALGORITHM', 'HS256')
-JWT_EXPIRE_DAYS = int(os.environ.get('JWT_ACCESS_TOKEN_EXPIRE_DAYS', 30))
-
-# Password hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-# OAuth2 scheme for JWT
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 
 # Create the main app
 app = FastAPI()
@@ -139,27 +125,6 @@ class CheatsheetRequest(BaseModel):
 class DailySummaryRequest(BaseModel):
     date: Optional[str] = None  # Format: YYYY-MM-DD
 
-# ==================== AUTH MODELS ====================
-
-class UserCreate(BaseModel):
-    email: EmailStr
-    password: str = Field(min_length=6)
-    name: Optional[str] = None
-
-class UserLogin(BaseModel):
-    email: EmailStr
-    password: str
-
-class UserOut(BaseModel):
-    id: str
-    email: str
-    name: Optional[str] = None
-
-class Token(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
-    user: UserOut
-
 # ==================== BULK IMPORT MODELS ====================
 
 class BulkClientImport(BaseModel):
@@ -169,101 +134,10 @@ class BulkDocumentImport(BaseModel):
     client_id: str
     csv_data: str
 
-# ==================== AUTH UTILS ====================
-
-def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
-
-def create_access_token(user_id: str, email: str) -> str:
-    expire = datetime.utcnow() + timedelta(days=JWT_EXPIRE_DAYS)
-    payload = {"sub": user_id, "email": email, "exp": expire}
-    return jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
-
-async def get_current_user(token: Optional[str] = Depends(oauth2_scheme)) -> dict:
-    if not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    try:
-        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
-        user_id = payload.get("sub")
-        if user_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token",
-            )
-    except JWTError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token",
-        )
-    
-    user = await db.users.find_one({"id": user_id})
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found",
-        )
-    return user
-
-# ==================== AUTH ENDPOINTS ====================
-
-@api_router.post("/auth/register", response_model=Token)
-async def register(user_in: UserCreate):
-    """Register a new user - any user can register and access shared data"""
-    existing = await db.users.find_one({"email": user_in.email.lower()})
-    if existing:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered"
-        )
-    
-    user_id = str(uuid.uuid4())
-    user_doc = {
-        "id": user_id,
-        "email": user_in.email.lower(),
-        "name": user_in.name or user_in.email.split('@')[0],
-        "hashed_password": hash_password(user_in.password),
-        "created_at": datetime.utcnow(),
-    }
-    await db.users.insert_one(user_doc)
-    
-    access_token = create_access_token(user_id, user_in.email.lower())
-    return Token(
-        access_token=access_token,
-        user=UserOut(id=user_id, email=user_in.email.lower(), name=user_doc["name"])
-    )
-
-@api_router.post("/auth/login", response_model=Token)
-async def login(user_in: UserLogin):
-    """Login with email and password"""
-    user = await db.users.find_one({"email": user_in.email.lower()})
-    if not user or not verify_password(user_in.password, user["hashed_password"]):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Incorrect email or password"
-        )
-    
-    access_token = create_access_token(user["id"], user["email"])
-    return Token(
-        access_token=access_token,
-        user=UserOut(id=user["id"], email=user["email"], name=user.get("name"))
-    )
-
-@api_router.get("/auth/me", response_model=UserOut)
-async def get_me(current_user: dict = Depends(get_current_user)):
-    """Get currently logged in user"""
-    return UserOut(id=current_user["id"], email=current_user["email"], name=current_user.get("name"))
-
 # ==================== BULK IMPORT ENDPOINTS ====================
 
 @api_router.post("/bulk/clients")
-async def bulk_import_clients(data: BulkClientImport, current_user: dict = Depends(get_current_user)):
+async def bulk_import_clients(data: BulkClientImport):
     """
     Bulk import clients from CSV.
     Expected CSV columns: firm_name, owner_name, mobile, email, address
@@ -310,7 +184,7 @@ async def bulk_import_clients(data: BulkClientImport, current_user: dict = Depen
         raise HTTPException(status_code=400, detail=f"CSV parsing error: {str(e)}")
 
 @api_router.post("/bulk/documents")
-async def bulk_import_documents(data: BulkDocumentImport, current_user: dict = Depends(get_current_user)):
+async def bulk_import_documents(data: BulkDocumentImport):
     """
     Bulk import documents for a specific client from CSV.
     Expected CSV columns: doc_name, status (pending/submitted), storage_location, softcopy_location, last_entry_date, uploaded_to_accounting (true/false)
