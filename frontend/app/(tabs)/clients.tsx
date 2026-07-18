@@ -93,23 +93,7 @@ export default function ClientsScreen() {
         contentContainerStyle={filtered.length === 0 ? styles.listEmpty : undefined}
         ListEmptyComponent={<Text style={styles.empty}>No clients yet. Add your first client to get started.</Text>}
         renderItem={({ item }) => (
-          <TouchableOpacity
-            style={styles.card}
-            onPress={() => router.push(`/client-detail?id=${item.id}`)}
-            onLongPress={() =>
-              Alert.alert('Delete client?', item.firm_name, [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                  text: 'Delete',
-                  style: 'destructive',
-                  onPress: async () => {
-                    await deleteClient(item.id);
-                    load();
-                  },
-                },
-              ])
-            }
-          >
+          <TouchableOpacity style={styles.card} onPress={() => router.push(`/client-detail?id=${item.id}`)}>
             <View style={styles.cardTop}>
               <View style={styles.avatar}>
                 <Text style={styles.avatarText}>{(item.firm_name || '?').slice(0, 1).toUpperCase()}</Text>
@@ -121,6 +105,30 @@ export default function ClientsScreen() {
               </View>
               <TouchableOpacity style={styles.editPill} onPress={() => openEdit(item)}>
                 <Text style={styles.editPillText}>Edit</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.cardActions}>
+              <TouchableOpacity
+                style={styles.deletePill}
+                onPress={() =>
+                  Alert.alert('Delete client?', item.firm_name, [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Delete',
+                      style: 'destructive',
+                      onPress: async () => {
+                        try {
+                          await deleteClient(item.id);
+                          await load();
+                        } catch (error) {
+                          Alert.alert('Delete failed', (error as Error).message);
+                        }
+                      },
+                    },
+                  ])
+                }
+              >
+                <Text style={styles.deletePillText}>Delete</Text>
               </TouchableOpacity>
             </View>
           </TouchableOpacity>
@@ -215,6 +223,9 @@ const styles = StyleSheet.create({
   muted: { color: '#9ca3af', fontSize: 12 },
   editPill: { backgroundColor: '#eff6ff', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999 },
   editPillText: { color: '#1e3a8a', fontWeight: '700' },
+  cardActions: { marginTop: 12, flexDirection: 'row', justifyContent: 'flex-end' },
+  deletePill: { backgroundColor: '#fee2e2', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 999 },
+  deletePillText: { color: '#b91c1c', fontWeight: '800' },
   modal: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' },
   sheet: { backgroundColor: '#fff', padding: 16, borderTopLeftRadius: 24, borderTopRightRadius: 24, gap: 10 },
   sheetTitle: { fontSize: 18, fontWeight: '800', color: '#111827', marginBottom: 4 },
