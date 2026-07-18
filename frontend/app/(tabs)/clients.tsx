@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList, Modal, Alert } from 'react-native';
 import { router } from 'expo-router';
 import { createClient, deleteClient, listClients, updateClient } from '../../src/lib/local-db';
+import { importClientsFromCsv } from '../../src/lib/local-import';
 
 const blankForm = { firm_name: '', owner_name: '', mobile: '', email: '', address: '' };
 
@@ -11,6 +12,8 @@ export default function ClientsScreen() {
   const [visible, setVisible] = useState(false);
   const [editing, setEditing] = useState<any | null>(null);
   const [form, setForm] = useState(blankForm);
+  const [bulkVisible, setBulkVisible] = useState(false);
+  const [bulkText, setBulkText] = useState('');
 
   const load = async () => setClients(await listClients());
   useEffect(() => { load(); }, []);
@@ -79,6 +82,10 @@ export default function ClientsScreen() {
         <Text style={styles.buttonText}>Add Client</Text>
       </TouchableOpacity>
 
+      <TouchableOpacity style={styles.secondaryButton} onPress={() => setBulkVisible(true)}>
+        <Text style={styles.secondaryButtonText}>Bulk Import Clients</Text>
+      </TouchableOpacity>
+
       <FlatList
         data={filtered}
         keyExtractor={(item) => item.id}
@@ -143,6 +150,41 @@ export default function ClientsScreen() {
           </View>
         </View>
       </Modal>
+
+      <Modal visible={bulkVisible} transparent animationType="slide">
+        <View style={styles.modal}>
+          <View style={styles.sheet}>
+            <Text style={styles.sheetTitle}>Bulk Import Clients</Text>
+            <Text style={styles.subtitle}>Paste CSV rows with firm_name, owner_name, mobile, email, address.</Text>
+            <TextInput
+              style={[styles.input, styles.csvInput]}
+              multiline
+              numberOfLines={10}
+              value={bulkText}
+              onChangeText={setBulkText}
+              placeholder="firm_name,owner_name,mobile,email,address"
+              placeholderTextColor="#9ca3af"
+            />
+            <TouchableOpacity
+              style={styles.button}
+              onPress={async () => {
+                const result = await importClientsFromCsv(bulkText);
+                setBulkVisible(false);
+                setBulkText('');
+                load();
+                const summary = `Created ${result.created_count} client${result.created_count === 1 ? '' : 's'}.`;
+                const errorText = result.errors.length ? `\n\nProblems:\n${result.errors.join('\n')}` : '';
+                Alert.alert('Import complete', `${summary}${errorText}`);
+              }}
+            >
+              <Text style={styles.buttonText}>Import</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setBulkVisible(false)}>
+              <Text style={styles.cancel}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -159,6 +201,8 @@ const styles = StyleSheet.create({
   clearButtonText: { color: '#1e3a8a', fontWeight: '700' },
   button: { backgroundColor: '#1e3a8a', padding: 14, borderRadius: 14, alignItems: 'center', marginBottom: 12 },
   buttonText: { color: '#fff', fontWeight: '700' },
+  secondaryButton: { backgroundColor: '#dbeafe', padding: 14, borderRadius: 14, alignItems: 'center', marginBottom: 12 },
+  secondaryButtonText: { color: '#1e3a8a', fontWeight: '800' },
   listEmpty: { flexGrow: 1, justifyContent: 'center' },
   empty: { color: '#6b7280', textAlign: 'center', marginTop: 24 },
   card: { backgroundColor: '#fff', padding: 14, borderRadius: 18, marginBottom: 10, borderWidth: 1, borderColor: '#e5e7eb' },
@@ -175,5 +219,6 @@ const styles = StyleSheet.create({
   sheet: { backgroundColor: '#fff', padding: 16, borderTopLeftRadius: 24, borderTopRightRadius: 24, gap: 10 },
   sheetTitle: { fontSize: 18, fontWeight: '800', color: '#111827', marginBottom: 4 },
   input: { backgroundColor: '#f9fafb', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#e5e7eb' },
+  csvInput: { minHeight: 140, textAlignVertical: 'top' },
   cancel: { textAlign: 'center', padding: 10, color: '#6b7280', fontWeight: '700' },
 });

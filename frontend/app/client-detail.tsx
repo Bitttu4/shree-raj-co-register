@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Modal, Alert, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Modal, Alert, RefreshControl, Platform } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { createDocument, deleteClient, deleteDocument, getClient, listDocuments, updateClient, updateDocument } from '../src/lib/local-db';
 import { importDocumentsFromCsv } from '../src/lib/local-import';
@@ -34,11 +34,23 @@ export default function ClientDetailScreen() {
     submitted: documents.filter((doc) => doc.status === 'submitted').length,
   }), [documents]);
 
+  const goBack = () => {
+    if (Platform.OS === 'web') {
+      router.replace('/(tabs)');
+      return;
+    }
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+    router.replace('/(tabs)');
+  };
+
   if (!client) {
     return (
       <View style={styles.centered}>
         <Text style={styles.emptyTitle}>Client not found</Text>
-        <TouchableOpacity style={styles.primaryButton} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.primaryButton} onPress={goBack}>
           <Text style={styles.primaryButtonText}>Go Back</Text>
         </TouchableOpacity>
       </View>
@@ -104,7 +116,7 @@ export default function ClientDetailScreen() {
       contentContainerStyle={styles.content}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}
     >
-      <TouchableOpacity onPress={() => router.back()}>
+      <TouchableOpacity onPress={goBack}>
         <Text style={styles.back}>Back</Text>
       </TouchableOpacity>
 
@@ -149,25 +161,68 @@ export default function ClientDetailScreen() {
           <Text style={styles.empty}>No documents added yet.</Text>
         ) : (
           documents.map((doc) => (
-            <TouchableOpacity key={doc.id} style={styles.docCard} onPress={() => openEditDoc(doc)} onLongPress={() => {
-              Alert.alert('Delete document?', doc.doc_name, [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'Delete', style: 'destructive', onPress: async () => { await deleteDocument(doc.id); load(); } },
-              ]);
-            }}>
+            <TouchableOpacity
+              key={doc.id}
+              style={styles.docCard}
+              onPress={() => openEditDoc(doc)}
+              onLongPress={() => {
+                Alert.alert('Delete document?', doc.doc_name, [
+                  { text: 'Cancel', style: 'cancel' },
+                  { text: 'Delete', style: 'destructive', onPress: async () => { await deleteDocument(doc.id); load(); } },
+                ]);
+              }}
+            >
               <View style={styles.docTop}>
                 <View style={[styles.statusDot, doc.status === 'submitted' ? styles.dotGreen : styles.dotAmber]} />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.docTitle}>{doc.doc_name}</Text>
-                  <Text style={styles.docMeta}>{doc.status} • {doc.last_entry_date || 'No date'}</Text>
+                  <Text style={styles.docMeta}>
+                    {doc.status === 'submitted' ? 'Submitted' : 'Pending'} • {doc.last_entry_date || 'No date'}
+                  </Text>
                 </View>
                 <Text style={[styles.pill, doc.status === 'submitted' ? styles.pillGreen : styles.pillAmber]}>
-                  {doc.status}
+                  {doc.status === 'submitted' ? 'Submitted' : 'Pending'}
                 </Text>
               </View>
+
+              <View style={styles.flagRow}>
+                <View style={styles.flagItem}>
+                  <Text style={styles.flagLabel}>File returned</Text>
+                  <TouchableOpacity
+                    style={[styles.flagButton, doc.return_status ? styles.flagButtonOn : styles.flagButtonOff]}
+                    onPress={async () => {
+                      await updateDocument(doc.id, { return_status: doc.return_status ? 0 : 1 } as any);
+                      load();
+                    }}
+                  >
+                    <Text style={styles.flagButtonText}>{doc.return_status ? 'Yes, returned' : 'Mark as returned'}</Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.flagItem}>
+                  <Text style={styles.flagLabel}>Uploaded to system</Text>
+                  <TouchableOpacity
+                    style={[styles.flagButton, doc.uploaded_to_accounting ? styles.flagButtonOn : styles.flagButtonOff]}
+                    onPress={async () => {
+                      await updateDocument(doc.id, { uploaded_to_accounting: doc.uploaded_to_accounting ? 0 : 1 } as any);
+                      load();
+                    }}
+                  >
+                    <Text style={styles.flagButtonText}>{doc.uploaded_to_accounting ? 'Yes, uploaded' : 'Mark as uploaded'}</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
               <View style={styles.docActions}>
-                <TouchableOpacity style={styles.smallButton} onPress={async () => { await updateDocument(doc.id, { status: doc.status === 'pending' ? 'submitted' : 'pending' }); load(); }}>
-                  <Text style={styles.smallButtonText}>Toggle</Text>
+                <TouchableOpacity
+                  style={styles.smallButton}
+                  onPress={async () => {
+                    await updateDocument(doc.id, { status: doc.status === 'pending' ? 'submitted' : 'pending' } as any);
+                    load();
+                  }}
+                >
+                  <Text style={styles.smallButtonText}>
+                    {doc.status === 'pending' ? 'Mark as submitted' : 'Mark as pending'}
+                  </Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={[styles.smallButton, styles.smallDanger]} onPress={async () => { await deleteDocument(doc.id); load(); }}>
                   <Text style={[styles.smallButtonText, styles.smallDangerText]}>Delete</Text>
@@ -182,7 +237,7 @@ export default function ClientDetailScreen() {
         style={styles.dangerButton}
         onPress={() => Alert.alert('Delete client?', 'This will remove the client and all linked data.', [
           { text: 'Cancel', style: 'cancel' },
-          { text: 'Delete', style: 'destructive', onPress: async () => { await deleteClient(id); router.back(); } },
+          { text: 'Delete', style: 'destructive', onPress: async () => { await deleteClient(id); goBack(); } },
         ])}
       >
         <Text style={styles.dangerButtonText}>Delete Client</Text>
@@ -213,9 +268,27 @@ export default function ClientDetailScreen() {
       <Modal visible={csvVisible} transparent animationType="slide">
         <View style={styles.modal}><View style={styles.sheet}>
           <Text style={styles.sheetTitle}>Bulk Import Documents</Text>
-          <Text style={styles.subtitle}>Paste CSV rows below. Required column: doc_name</Text>
-          <TextInput style={[styles.input, styles.csvInput]} multiline value={csvText} onChangeText={setCsvText} placeholder="doc_name,status,storage_location" placeholderTextColor="#9ca3af" />
-          <TouchableOpacity style={styles.primaryButton} onPress={async () => { await importDocumentsFromCsv(id, csvText); setCsvVisible(false); setCsvText(''); load(); }}>
+          <Text style={styles.subtitle}>Paste CSV rows below. Required column: doc_name.</Text>
+          <TextInput
+            style={[styles.input, styles.csvInput]}
+            multiline
+            value={csvText}
+            onChangeText={setCsvText}
+            placeholder="doc_name,status,storage_location,softcopy_location,last_entry_date,uploaded_to_accounting"
+            placeholderTextColor="#9ca3af"
+          />
+          <TouchableOpacity
+            style={styles.primaryButton}
+            onPress={async () => {
+              const result = await importDocumentsFromCsv(id, csvText);
+              setCsvVisible(false);
+              setCsvText('');
+              load();
+              const summary = `Created ${result.created_count} document${result.created_count === 1 ? '' : 's'}.`;
+              const errorText = result.errors.length ? `\n\nProblems:\n${result.errors.join('\n')}` : '';
+              Alert.alert('Import complete', `${summary}${errorText}`);
+            }}
+          >
             <Text style={styles.primaryButtonText}>Import</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={() => setCsvVisible(false)}><Text style={styles.cancel}>Cancel</Text></TouchableOpacity>
@@ -284,6 +357,13 @@ const styles = StyleSheet.create({
   pill: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, fontSize: 12, fontWeight: '800' },
   pillGreen: { backgroundColor: '#d1fae5', color: '#047857' },
   pillAmber: { backgroundColor: '#fef3c7', color: '#92400e' },
+  flagRow: { flexDirection: 'row', gap: 10 },
+  flagItem: { flex: 1, gap: 6 },
+  flagLabel: { fontSize: 12, fontWeight: '700', color: '#6b7280' },
+  flagButton: { padding: 10, borderRadius: 12, alignItems: 'center' },
+  flagButtonOn: { backgroundColor: '#d1fae5' },
+  flagButtonOff: { backgroundColor: '#f3f4f6' },
+  flagButtonText: { fontSize: 12, fontWeight: '800', color: '#111827', textAlign: 'center' },
   docActions: { flexDirection: 'row', gap: 10 },
   smallButton: { flex: 1, backgroundColor: '#eff6ff', padding: 10, borderRadius: 12, alignItems: 'center' },
   smallButtonText: { color: '#1e3a8a', fontWeight: '700' },

@@ -1,0 +1,4 @@
+doc_name,status,storage_location,softcopy_location,last_entry_date,uploaded_to_accounting,return_status
+GST Return,pending,File Cabinet A,Google Drive/Tax/GST,2026-07-01,no,no
+TDS Challan,submitted,File Cabinet B,Google Drive/Tax/TDS,2026-07-05,yes,no
+Audit Report,pending,Locker 2,Mobile Files/Audit,2026-07-10,no,yes
