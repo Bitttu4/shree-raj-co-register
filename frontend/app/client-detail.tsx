@@ -235,10 +235,27 @@ export default function ClientDetailScreen() {
 
       <TouchableOpacity
         style={styles.dangerButton}
-        onPress={() => Alert.alert('Delete client?', 'This will remove the client and all linked data.', [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Delete', style: 'destructive', onPress: async () => { await deleteClient(id); goBack(); } },
-        ])}
+        onPress={() =>
+          Alert.alert('Delete client?', 'This will remove the client and all linked data.', [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Delete',
+              style: 'destructive',
+              onPress: async () => {
+                try {
+                  const deleted = await deleteClient(id);
+                  if (!deleted) {
+                    Alert.alert('Delete failed', 'Client was not found in local storage.');
+                    return;
+                  }
+                  router.replace('/(tabs)');
+                } catch (error) {
+                  Alert.alert('Delete failed', (error as Error).message);
+                }
+              },
+            },
+          ])
+        }
       >
         <Text style={styles.dangerButtonText}>Delete Client</Text>
       </TouchableOpacity>

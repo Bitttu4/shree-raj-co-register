@@ -11,6 +11,14 @@ config.cacheStores = [
   new FileStore({ root: path.join(root, 'cache') }),
 ];
 
+// Windows + OneDrive can expose package files as reparse points, which Metro
+// may try to follow with readlink during web bundling. Keep symlink handling off
+// so the bundler reads the physical files directly.
+config.resolver = {
+  ...config.resolver,
+  unstable_enableSymlinks: false,
+};
+
 
 // // Exclude unnecessary directories from file watching
 // config.watchFolders = [__dirname];
