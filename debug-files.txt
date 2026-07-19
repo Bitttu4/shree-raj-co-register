@@ -1,0 +1,464 @@
+
+==================== frontend/app/(tabs)/clients.tsx ====================
+
+import { useEffect, useMemo, useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList, Modal, Alert } from 'react-native';
+import { router } from 'expo-router';
+import { createClient, deleteClient, listClients, updateClient } from '../../src/lib/local-db';
+import { importClientsFromCsv } from '../../src/lib/local-import';
+
+const blankForm = { firm_name: '', owner_name: '', mobile: '', email: '', address: '' };
+
+export default function ClientsScreen() {
+  const [clients, setClients] = useState<any[]>([]);
+  const [query, setQuery] = useState('');
+  const [visible, setVisible] = useState(false);
+  const [editing, setEditing] = useState<any | null>(null);
+  const [form, setForm] = useState(blankForm);
+  const [bulkVisible, setBulkVisible] = useState(false);
+  const [bulkText, setBulkText] = useState('');
+
+  const load = async () => setClients(await listClients());
+  useEffect(() => { load(); }, []);
+
+  const filtered = useMemo(
+    () => clients.filter((c) => `${c.firm_name} ${c.owner_name} ${c.mobile}`.toLowerCase().includes(query.toLowerCase())),
+    [clients, query],
+  );
+
+  const openNew = () => {
+    setEditing(null);
+    setForm(blankForm);
+    setVisible(true);
+  };
+
+  const openEdit = (client: any) => {
+    setEditing(client);
+    setForm({
+      firm_name: client.firm_name || '',
+      owner_name: client.owner_name || '',
+      mobile: client.mobile || '',
+      email: client.email || '',
+      address: client.address || '',
+    });
+    setVisible(true);
+  };
+
+  const save = async () => {
+    if (!form.firm_name || !form.owner_name || !form.mobile) {
+      Alert.alert('Missing fields', 'Please fill in the required client details.');
+      return;
+    }
+    if (editing) {
+      await updateClient(editing.id, form);
+    } else {
+      await createClient(form as any);
+    }
+    setVisible(false);
+    load();
+  };
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.kicker}>Directory</Text>
+        <Text style={styles.title}>Clients</Text>
+        <Text style={styles.subtitle}>Search, open, and edit every client from one clean list.</Text>
+      </View>
+
+      <View style={styles.searchRow}>
+        <TextInput
+          style={styles.search}
+          placeholder="Search by firm, owner, or mobile"
+          placeholderTextColor="#9ca3af"
+          value={query}
+          onChangeText={setQuery}
+        />
+        {query.length > 0 && (
+          <TouchableOpacity style={styles.clearButton} onPress={() => setQuery('')}>
+            <Text style={styles.clearButtonText}>Clear</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      <TouchableOpacity style={styles.button} onPress={openNew}>
+        <Text style={styles.buttonText}>Add Client</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.secondaryButton} onPress={() => setBulkVisible(true)}>
+        <Text style={styles.secondaryButtonText}>Bulk Import Clients</Text>
+      </TouchableOpacity>
+
+      <FlatList
+        data={filtered}
+        keyExtractor={(item) => item.id}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={filtered.length === 0 ? styles.listEmpty : undefined}
+        ListEmptyComponent={<Text style={styles.empty}>No clients yet. Add your first client to get started.</Text>}
+        renderItem={({ item }) => (
+          <TouchableOpacity style={styles.card} onPress={() => router.push(`/client-detail?id=${item.id}`)}>
+            <View style={styles.cardTop}>
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>{(item.firm_name || '?').slice(0, 1).toUpperCase()}</Text>
+              </View>
+              <View style={styles.cardMain}>
+                <Text style={styles.cardTitle}>{item.firm_name}</Text>
+                <Text style={styles.cardText}>{item.owner_name}</Text>
+                <Text style={styles.muted}>{item.mobile}</Text>
+              </View>
+              <TouchableOpacity style={styles.editPill} onPress={() => openEdit(item)}>
+                <Text style={styles.editPillText}>Edit</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.cardActions}>
+              <TouchableOpacity
+                style={styles.deletePill}
+                onPress={() =>
+                  Alert.alert('Delete client?', item.firm_name, [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Delete',
+                      style: 'destructive',
+                      onPress: async () => {
+                        try {
+                          await deleteClient(item.id);
+                          await load();
+                        } catch (error) {
+                          Alert.alert('Delete failed', (error as Error).message);
+                        }
+                      },
+                    },
+                  ])
+                }
+              >
+                <Text style={styles.deletePillText}>Delete</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        )}
+      />
+
+      <Modal visible={visible} transparent animationType="slide">
+        <View style={styles.modal}>
+          <View style={styles.sheet}>
+            <Text style={styles.sheetTitle}>{editing ? 'Edit Client' : 'New Client'}</Text>
+            {(['firm_name', 'owner_name', 'mobile', 'email', 'address'] as const).map((key) => (
+              <TextInput
+                key={key}
+                style={styles.input}
+                placeholder={key.replace('_', ' ')}
+                placeholderTextColor="#9ca3af"
+                value={form[key]}
+                onChangeText={(text) => setForm({ ...form, [key]: text })}
+              />
+            ))}
+            <TouchableOpacity style={styles.button} onPress={save}>
+              <Text style={styles.buttonText}>Save</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setVisible(false)}>
+              <Text style={styles.cancel}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={bulkVisible} transparent animationType="slide">
+        <View style={styles.modal}>
+          <View style={styles.sheet}>
+            <Text style={styles.sheetTitle}>Bulk Import Clients</Text>
+            <Text style={styles.subtitle}>Paste CSV rows with firm_name, owner_name, mobile, email, address.</Text>
+            <TextInput
+              style={[styles.input, styles.csvInput]}
+              multiline
+              numberOfLines={10}
+              value={bulkText}
+              onChangeText={setBulkText}
+              placeholder="firm_name,owner_name,mobile,email,address"
+              placeholderTextColor="#9ca3af"
+            />
+            <TouchableOpacity
+              style={styles.button}
+              onPress={async () => {
+                const result = await importClientsFromCsv(bulkText);
+                setBulkVisible(false);
+                setBulkText('');
+                load();
+                const summary = `Created ${result.created_count} client${result.created_count === 1 ? '' : 's'}.`;
+                const errorText = result.errors.length ? `\n\nProblems:\n${result.errors.join('\n')}` : '';
+                Alert.alert('Import complete', `${summary}${errorText}`);
+              }}
+            >
+              <Text style={styles.buttonText}>Import</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setBulkVisible(false)}>
+              <Text style={styles.cancel}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, padding: 16, backgroundColor: '#eef2ff' },
+  header: { marginBottom: 12, gap: 4 },
+  kicker: { textTransform: 'uppercase', letterSpacing: 1, color: '#1e3a8a', fontWeight: '700', fontSize: 12 },
+  title: { fontSize: 28, fontWeight: '800', color: '#111827' },
+  subtitle: { color: '#6b7280', lineHeight: 20 },
+  searchRow: { flexDirection: 'row', gap: 10, alignItems: 'center', marginBottom: 12 },
+  search: { flex: 1, backgroundColor: '#fff', padding: 14, borderRadius: 14, borderWidth: 1, borderColor: '#e5e7eb' },
+  clearButton: { backgroundColor: '#dbeafe', paddingHorizontal: 14, paddingVertical: 12, borderRadius: 14 },
+  clearButtonText: { color: '#1e3a8a', fontWeight: '700' },
+  button: { backgroundColor: '#1e3a8a', padding: 14, borderRadius: 14, alignItems: 'center', marginBottom: 12 },
+  buttonText: { color: '#fff', fontWeight: '700' },
+  secondaryButton: { backgroundColor: '#dbeafe', padding: 14, borderRadius: 14, alignItems: 'center', marginBottom: 12 },
+  secondaryButtonText: { color: '#1e3a8a', fontWeight: '800' },
+  listEmpty: { flexGrow: 1, justifyContent: 'center' },
+  empty: { color: '#6b7280', textAlign: 'center', marginTop: 24 },
+  card: { backgroundColor: '#fff', padding: 14, borderRadius: 18, marginBottom: 10, borderWidth: 1, borderColor: '#e5e7eb' },
+  cardTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  avatar: { width: 46, height: 46, borderRadius: 23, backgroundColor: '#1e3a8a', alignItems: 'center', justifyContent: 'center' },
+  avatarText: { color: '#fff', fontWeight: '800', fontSize: 18 },
+  cardMain: { flex: 1, gap: 2 },
+  cardTitle: { fontSize: 16, fontWeight: '700', color: '#111827' },
+  cardText: { color: '#6b7280' },
+  muted: { color: '#9ca3af', fontSize: 12 },
+  editPill: { backgroundColor: '#eff6ff', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999 },
+  editPillText: { color: '#1e3a8a', fontWeight: '700' },
+  cardActions: { marginTop: 12, flexDirection: 'row', justifyContent: 'flex-end' },
+  deletePill: { backgroundColor: '#fee2e2', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 999 },
+  deletePillText: { color: '#b91c1c', fontWeight: '800' },
+  modal: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' },
+  sheet: { backgroundColor: '#fff', padding: 16, borderTopLeftRadius: 24, borderTopRightRadius: 24, gap: 10 },
+  sheetTitle: { fontSize: 18, fontWeight: '800', color: '#111827', marginBottom: 4 },
+  input: { backgroundColor: '#f9fafb', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#e5e7eb' },
+  csvInput: { minHeight: 140, textAlignVertical: 'top' },
+  cancel: { textAlign: 'center', padding: 10, color: '#6b7280', fontWeight: '700' },
+});
+
+==================== frontend/src/lib/local-db.native.ts ====================
+
+import * as SQLite from 'expo-sqlite';
+import { ClientRecord, DocumentRecord, TaskRecord, makeId, toFlag } from './local-db.shared';
+
+let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
+
+async function initDb() {
+  const db = await SQLite.openDatabaseAsync('shree_raj_local.db');
+  await db.execAsync(`
+    PRAGMA journal_mode = WAL;
+    CREATE TABLE IF NOT EXISTS clients (
+      id TEXT PRIMARY KEY NOT NULL,
+      firm_name TEXT NOT NULL,
+      owner_name TEXT NOT NULL,
+      mobile TEXT NOT NULL,
+      email TEXT,
+      address TEXT,
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS documents (
+      id TEXT PRIMARY KEY NOT NULL,
+      client_id TEXT NOT NULL,
+      doc_name TEXT NOT NULL,
+      status TEXT NOT NULL,
+      storage_location TEXT,
+      softcopy_location TEXT,
+      return_status INTEGER NOT NULL DEFAULT 0,
+      last_entry_date TEXT,
+      uploaded_to_accounting INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS tasks (
+      id TEXT PRIMARY KEY NOT NULL,
+      client_id TEXT,
+      task_name TEXT NOT NULL,
+      description TEXT,
+      is_completed INTEGER NOT NULL DEFAULT 0,
+      all_docs_submitted INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      completed_at TEXT
+    );
+  `);
+  return db;
+}
+
+export async function getDb() {
+  if (!dbPromise) dbPromise = initDb();
+  return dbPromise;
+}
+
+export async function listClients() {
+  const db = await getDb();
+  return db.getAllAsync<ClientRecord>('SELECT * FROM clients ORDER BY created_at DESC');
+}
+export async function getClient(id: string) {
+  const db = await getDb();
+  return db.getFirstAsync<ClientRecord>('SELECT * FROM clients WHERE id = ?', id);
+}
+export async function createClient(input: Omit<ClientRecord, 'id' | 'created_at'> & { id?: string }) {
+  const db = await getDb();
+  const client = { ...input, id: input.id ?? makeId(), created_at: new Date().toISOString() };
+  await db.runAsync('INSERT INTO clients (id, firm_name, owner_name, mobile, email, address, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', client.id, client.firm_name, client.owner_name, client.mobile, client.email, client.address, client.created_at);
+  return client;
+}
+export async function updateClient(id: string, patch: Partial<Omit<ClientRecord, 'id' | 'created_at'>>) {
+  const db = await getDb();
+  const current = await getClient(id);
+  if (!current) return null;
+  const next = { ...current, ...patch };
+  await db.runAsync('UPDATE clients SET firm_name = ?, owner_name = ?, mobile = ?, email = ?, address = ? WHERE id = ?', next.firm_name, next.owner_name, next.mobile, next.email, next.address, id);
+  return next;
+}
+export async function deleteClient(id: string) {
+  const db = await getDb();
+  await db.runAsync('DELETE FROM documents WHERE client_id = ?', id);
+  await db.runAsync('DELETE FROM tasks WHERE client_id = ?', id);
+  return (await db.runAsync('DELETE FROM clients WHERE id = ?', id)).changes > 0;
+}
+
+export async function listDocuments(clientId?: string) {
+  const db = await getDb();
+  return clientId ? db.getAllAsync<DocumentRecord>('SELECT * FROM documents WHERE client_id = ? ORDER BY created_at DESC', clientId) : db.getAllAsync<DocumentRecord>('SELECT * FROM documents ORDER BY created_at DESC');
+}
+export async function getDocument(id: string) {
+  const db = await getDb();
+  return db.getFirstAsync<DocumentRecord>('SELECT * FROM documents WHERE id = ?', id);
+}
+export async function createDocument(input: Omit<DocumentRecord, 'id' | 'created_at' | 'return_status' | 'uploaded_to_accounting'> & Partial<Pick<DocumentRecord, 'return_status' | 'uploaded_to_accounting'>> & { id?: string }) {
+  const db = await getDb();
+  const doc: DocumentRecord = { ...input, id: input.id ?? makeId(), status: input.status ?? 'pending', return_status: toFlag(input.return_status), uploaded_to_accounting: toFlag(input.uploaded_to_accounting), created_at: new Date().toISOString() } as DocumentRecord;
+  await db.runAsync('INSERT INTO documents (id, client_id, doc_name, status, storage_location, softcopy_location, return_status, last_entry_date, uploaded_to_accounting, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', doc.id, doc.client_id, doc.doc_name, doc.status, doc.storage_location, doc.softcopy_location, doc.return_status, doc.last_entry_date, doc.uploaded_to_accounting, doc.created_at);
+  return doc;
+}
+export async function updateDocument(id: string, patch: Partial<Omit<DocumentRecord, 'id' | 'created_at'>>) {
+  const db = await getDb();
+  const current = await getDocument(id);
+  if (!current) return null;
+  const next = { ...current, ...patch };
+  await db.runAsync('UPDATE documents SET doc_name = ?, status = ?, storage_location = ?, softcopy_location = ?, return_status = ?, last_entry_date = ?, uploaded_to_accounting = ? WHERE id = ?', next.doc_name, next.status, next.storage_location, next.softcopy_location, toFlag(next.return_status), next.last_entry_date, toFlag(next.uploaded_to_accounting), id);
+  return { ...next, return_status: toFlag(next.return_status), uploaded_to_accounting: toFlag(next.uploaded_to_accounting) };
+}
+export async function deleteDocument(id: string) {
+  const db = await getDb();
+  return (await db.runAsync('DELETE FROM documents WHERE id = ?', id)).changes > 0;
+}
+
+export async function listTasks() {
+  const db = await getDb();
+  return db.getAllAsync<TaskRecord>('SELECT * FROM tasks ORDER BY created_at DESC');
+}
+export async function listPendingTasks() {
+  const db = await getDb();
+  return db.getAllAsync<TaskRecord>('SELECT * FROM tasks WHERE is_completed = 0 ORDER BY created_at DESC');
+}
+export async function getTask(id: string) {
+  const db = await getDb();
+  return db.getFirstAsync<TaskRecord>('SELECT * FROM tasks WHERE id = ?', id);
+}
+export async function createTask(input: Omit<TaskRecord, 'id' | 'created_at' | 'is_completed' | 'completed_at'> & Partial<Pick<TaskRecord, 'is_completed' | 'completed_at'>> & { id?: string }) {
+  const db = await getDb();
+  const task: TaskRecord = { ...input, id: input.id ?? makeId(), is_completed: toFlag(input.is_completed), completed_at: input.completed_at ?? null, created_at: new Date().toISOString() } as TaskRecord;
+  await db.runAsync('INSERT INTO tasks (id, client_id, task_name, description, is_completed, all_docs_submitted, created_at, completed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', task.id, task.client_id, task.task_name, task.description, task.is_completed, task.all_docs_submitted, task.created_at, task.completed_at);
+  return task;
+}
+export async function updateTask(id: string, patch: Partial<Omit<TaskRecord, 'id' | 'created_at'>>) {
+  const db = await getDb();
+  const current = await getTask(id);
+  if (!current) return null;
+  const next = { ...current, ...patch };
+  await db.runAsync('UPDATE tasks SET task_name = ?, description = ?, is_completed = ?, all_docs_submitted = ?, completed_at = ? WHERE id = ?', next.task_name, next.description, toFlag(next.is_completed), toFlag(next.all_docs_submitted), next.completed_at, id);
+  return { ...next, is_completed: toFlag(next.is_completed), all_docs_submitted: toFlag(next.all_docs_submitted) };
+}
+export async function deleteTask(id: string) {
+  const db = await getDb();
+  return (await db.runAsync('DELETE FROM tasks WHERE id = ?', id)).changes > 0;
+}
+
+export async function getDashboardStats() {
+  const db = await getDb();
+  const clients = await db.getFirstAsync<{ total: number }>('SELECT COUNT(*) AS total FROM clients');
+  const tasks = await db.getFirstAsync<{ total: number; pending: number; completed: number }>('SELECT COUNT(*) AS total, SUM(CASE WHEN is_completed = 0 THEN 1 ELSE 0 END) AS pending, SUM(CASE WHEN is_completed = 1 THEN 1 ELSE 0 END) AS completed FROM tasks');
+  const documents = await db.getFirstAsync<{ total: number; pending: number; submitted: number }>('SELECT COUNT(*) AS total, SUM(CASE WHEN status = "pending" THEN 1 ELSE 0 END) AS pending, SUM(CASE WHEN status = "submitted" THEN 1 ELSE 0 END) AS submitted FROM documents');
+  return { clients: { total: clients?.total ?? 0 }, tasks: { total: tasks?.total ?? 0, pending: tasks?.pending ?? 0, completed: tasks?.completed ?? 0, long_pending: 0 }, documents: { total: documents?.total ?? 0, pending: documents?.pending ?? 0, submitted: documents?.submitted ?? 0 } };
+}
+
+==================== frontend/src/lib/local-db.shared.ts ====================
+
+export type ClientRecord = {
+  id: string;
+  firm_name: string;
+  owner_name: string;
+  mobile: string;
+  email: string | null;
+  address: string | null;
+  created_at: string;
+};
+
+export type DocumentRecord = {
+  id: string;
+  client_id: string;
+  doc_name: string;
+  status: 'submitted' | 'pending';
+  storage_location: string | null;
+  softcopy_location: string | null;
+  return_status: 0 | 1;
+  last_entry_date: string | null;
+  uploaded_to_accounting: 0 | 1;
+  created_at: string;
+};
+
+export type TaskRecord = {
+  id: string;
+  client_id: string | null;
+  task_name: string;
+  description: string | null;
+  is_completed: 0 | 1;
+  all_docs_submitted: 0 | 1;
+  created_at: string;
+  completed_at: string | null;
+};
+
+export const toFlag = (value: unknown) => (value ? 1 : 0) as 0 | 1;
+export const makeId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+==================== frontend/src/lib/local-db.ts ====================
+
+import { Platform } from 'react-native';
+import type { ClientRecord, DocumentRecord, TaskRecord } from './local-db.shared';
+
+type Impl = typeof import('./local-db.native') | typeof import('./local-db.web');
+
+let implPromise: Promise<Impl> | null = null;
+
+function loadImpl() {
+  if (!implPromise) {
+    implPromise = Platform.OS === 'web'
+      ? import('./local-db.web')
+      : import('./local-db.native');
+  }
+  return implPromise;
+}
+
+export type { ClientRecord, DocumentRecord, TaskRecord } from './local-db.shared';
+
+export async function listClients() { return (await loadImpl()).listClients(); }
+export async function getClient(id: string) { return (await loadImpl()).getClient(id); }
+export async function createClient(input: Parameters<Impl['createClient']>[0]) { return (await loadImpl()).createClient(input as any); }
+export async function updateClient(id: string, patch: Parameters<Impl['updateClient']>[1]) { return (await loadImpl()).updateClient(id, patch as any); }
+export async function deleteClient(id: string) { return (await loadImpl()).deleteClient(id); }
+
+export async function listDocuments(clientId?: string) { return (await loadImpl()).listDocuments(clientId); }
+export async function getDocument(id: string) { return (await loadImpl()).getDocument(id); }
+export async function createDocument(input: Parameters<Impl['createDocument']>[0]) { return (await loadImpl()).createDocument(input as any); }
+export async function updateDocument(id: string, patch: Parameters<Impl['updateDocument']>[1]) { return (await loadImpl()).updateDocument(id, patch as any); }
+export async function deleteDocument(id: string) { return (await loadImpl()).deleteDocument(id); }
+
+export async function listTasks() { return (await loadImpl()).listTasks(); }
+export async function listPendingTasks() { return (await loadImpl()).listPendingTasks(); }
+export async function getTask(id: string) { return (await loadImpl()).getTask(id); }
+export async function createTask(input: Parameters<Impl['createTask']>[0]) { return (await loadImpl()).createTask(input as any); }
+export async function updateTask(id: string, patch: Parameters<Impl['updateTask']>[1]) { return (await loadImpl()).updateTask(id, patch as any); }
+export async function deleteTask(id: string) { return (await loadImpl()).deleteTask(id); }
+
+export async function getDashboardStats() { return (await loadImpl()).getDashboardStats(); }

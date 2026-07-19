@@ -7,7 +7,8 @@ import { importDocumentsFromCsv } from '../src/lib/local-import';
 const blankDoc = { doc_name: '', status: 'pending', storage_location: '', softcopy_location: '', last_entry_date: '' };
 
 export default function ClientDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id } = useLocalSearchParams<{ id: string | string[] }>();
+  const clientId = Array.isArray(id) ? id[0] : id;
   const [client, setClient] = useState<any>(null);
   const [documents, setDocuments] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -20,14 +21,14 @@ export default function ClientDetailScreen() {
   const [clientForm, setClientForm] = useState({ firm_name: '', owner_name: '', mobile: '', email: '', address: '' });
 
   const load = async () => {
-    if (!id) return;
-    const [clientData, docsData] = await Promise.all([getClient(id), listDocuments(id)]);
+    if (!clientId) return;
+    const [clientData, docsData] = await Promise.all([getClient(clientId), listDocuments(clientId)]);
     setClient(clientData);
     setDocuments(docsData);
     setRefreshing(false);
   };
 
-  useEffect(() => { load(); }, [id]);
+  useEffect(() => { load(); }, [clientId]);
 
   const stats = useMemo(() => ({
     pending: documents.filter((doc) => doc.status === 'pending').length,
@@ -83,7 +84,7 @@ export default function ClientDetailScreen() {
     if (editingDoc) {
       await updateDocument(editingDoc.id, { ...docForm } as any);
     } else {
-      await createDocument({ client_id: id, ...docForm, return_status: 0, uploaded_to_accounting: 0 } as any);
+      await createDocument({ client_id: clientId, ...docForm, return_status: 0, uploaded_to_accounting: 0 } as any);
     }
     setDocVisible(false);
     load();
@@ -94,7 +95,7 @@ export default function ClientDetailScreen() {
       Alert.alert('Missing fields', 'Please fill in the required client details.');
       return;
     }
-    await updateClient(id, clientForm);
+    await updateClient(clientId, clientForm);
     setClientVisible(false);
     load();
   };
@@ -243,11 +244,13 @@ export default function ClientDetailScreen() {
               style: 'destructive',
               onPress: async () => {
                 try {
-                  const deleted = await deleteClient(id);
+                  const deleted = await deleteClient(clientId);
                   if (!deleted) {
                     Alert.alert('Delete failed', 'Client was not found in local storage.');
                     return;
                   }
+                  setClient(null);
+                  setDocuments([]);
                   router.replace('/(tabs)');
                 } catch (error) {
                   Alert.alert('Delete failed', (error as Error).message);
@@ -297,7 +300,7 @@ export default function ClientDetailScreen() {
           <TouchableOpacity
             style={styles.primaryButton}
             onPress={async () => {
-              const result = await importDocumentsFromCsv(id, csvText);
+              const result = await importDocumentsFromCsv(clientId, csvText);
               setCsvVisible(false);
               setCsvText('');
               load();
