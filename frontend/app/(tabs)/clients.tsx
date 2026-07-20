@@ -93,45 +93,42 @@ export default function ClientsScreen() {
         contentContainerStyle={filtered.length === 0 ? styles.listEmpty : undefined}
         ListEmptyComponent={<Text style={styles.empty}>No clients yet. Add your first client to get started.</Text>}
         renderItem={({ item }) => (
-          <TouchableOpacity style={styles.card} onPress={() => router.push(`/client-detail?id=${item.id}`)}>
+          <View style={styles.card}>
+            <TouchableOpacity style={styles.cardBody} onPress={() => router.push(`/client-detail?id=${item.id}`)}>
+              <View style={styles.cardTop}>
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarText}>{(item.firm_name || '?').slice(0, 1).toUpperCase()}</Text>
+                </View>
+                <View style={styles.cardMain}>
+                  <Text style={styles.cardTitle}>{item.firm_name}</Text>
+                  <Text style={styles.cardText}>{item.owner_name}</Text>
+                  <Text style={styles.muted}>{item.mobile}</Text>
+                </View>
+                <TouchableOpacity style={styles.editPill} onPress={() => openEdit(item)}>
+                  <Text style={styles.editPillText}>Edit</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableOpacity>
             <View style={styles.cardTop}>
-              <View style={styles.avatar}>
-                <Text style={styles.avatarText}>{(item.firm_name || '?').slice(0, 1).toUpperCase()}</Text>
-              </View>
-              <View style={styles.cardMain}>
-                <Text style={styles.cardTitle}>{item.firm_name}</Text>
-                <Text style={styles.cardText}>{item.owner_name}</Text>
-                <Text style={styles.muted}>{item.mobile}</Text>
-              </View>
-              <TouchableOpacity style={styles.editPill} onPress={() => openEdit(item)}>
-                <Text style={styles.editPillText}>Edit</Text>
-              </TouchableOpacity>
-            </View>
-            <View style={styles.cardActions}>
               <TouchableOpacity
                 style={styles.deletePill}
-                onPress={() =>
-                  Alert.alert('Delete client?', item.firm_name, [
-                    { text: 'Cancel', style: 'cancel' },
-                    {
-                      text: 'Delete',
-                      style: 'destructive',
-                      onPress: async () => {
-                        try {
-                          await deleteClient(item.id);
-                          await load();
-                        } catch (error) {
-                          Alert.alert('Delete failed', (error as Error).message);
-                        }
-                      },
-                    },
-                  ])
-                }
+                onPress={async () => {
+                  try {
+                    const deleted = await deleteClient(item.id);
+                    if (!deleted) {
+                      Alert.alert('Delete failed', 'Client was not found in local storage.');
+                      return;
+                    }
+                    setClients((current) => current.filter((client) => client.id !== item.id));
+                  } catch (error) {
+                    Alert.alert('Delete failed', (error as Error).message);
+                  }
+                }}
               >
                 <Text style={styles.deletePillText}>Delete</Text>
               </TouchableOpacity>
             </View>
-          </TouchableOpacity>
+          </View>
         )}
       />
 
@@ -214,6 +211,7 @@ const styles = StyleSheet.create({
   listEmpty: { flexGrow: 1, justifyContent: 'center' },
   empty: { color: '#6b7280', textAlign: 'center', marginTop: 24 },
   card: { backgroundColor: '#fff', padding: 14, borderRadius: 18, marginBottom: 10, borderWidth: 1, borderColor: '#e5e7eb' },
+  cardBody: { gap: 0 },
   cardTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   avatar: { width: 46, height: 46, borderRadius: 23, backgroundColor: '#1e3a8a', alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: '#fff', fontWeight: '800', fontSize: 18 },
