@@ -40,6 +40,16 @@ set APP_HOME=%DIRNAME%
 @rem Resolve any "." and ".." in APP_HOME to make it shorter.
 for %%i in ("%APP_HOME%") do set APP_HOME=%%~fi
 
+@rem Map the project root to a short junction when possible.
+@rem This keeps Android CMake object paths under Windows path limits for deep workspaces.
+for %%i in ("%APP_HOME%\..") do set PROJECT_ROOT=%%~fi
+set SHORT_ROOT=%TEMP%\codex-short-shree-raj-co-register
+if not exist "%SHORT_ROOT%" (
+  mklink /J "%SHORT_ROOT%" "%PROJECT_ROOT%" >NUL 2>&1
+)
+if exist "%SHORT_ROOT%\android" set APP_HOME=%SHORT_ROOT%\android
+cd /d "%APP_HOME%"
+
 @rem Add default JVM options here. You can also use JAVA_OPTS and GRADLE_OPTS to pass JVM options to this script.
 set DEFAULT_JVM_OPTS="-Xmx64m" "-Xms64m"
 
